@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "token:generate": "node scripts/generate-launch-token.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "next": "16.2.3",
@@ -19,8 +22,10 @@
     "@types/node": "22.15.2",
     "@types/react": "19.1.2",
     "@types/react-dom": "19.1.2",
+    "@vitest/coverage-v8": "^4.1.4",
     "eslint": "9.25.1",
     "eslint-config-next": "16.2.3",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "vitest": "^4.1.4"
   }
 }
