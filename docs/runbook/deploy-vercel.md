@@ -1,51 +1,46 @@
-# Vercelデプロイ手順
+# 実行手順（ローカル開発 / Vercelデプロイ）
 
-## 1. 前提
+状態（2026-06）: **未デプロイ**。現在はローカル＋Supabaseでモックを稼働。
 
-- GitHubリポジトリ: `SeibuShodoku/report-app-justdb`
-- 実行基盤: Vercel
+## 1. ローカル開発（モック）
 
-## 2. Vercelプロジェクト作成（GUI）
-
-1. Vercelにログイン
-2. `Add New...` -> `Project`
-3. GitHubの `SeibuShodoku/report-app-justdb` を選択
-4. Framework Preset は `Next.js` を選択
-5. `Deploy` を実行
-
-## 3. 環境変数
-
-Vercel Project Settings -> Environment Variables に設定する。
-
-- `REPORT_STORAGE_DIR` = `data/reports`
-- `REPORT_LINK_SECRET` = 任意の長いランダム文字列（将来トークン有効化時）
-
-注記: 現在はトークンなし運用のため `REPORT_LINK_SECRET` は必須ではないが、先行設定を推奨。
-
-## 4. 動作確認URL
-
-デプロイ後のURLに対して以下形式でアクセスする。
-
-```text
-https://<vercel-domain>/report/new?caseId=CASE001&investigationId=INV001&constructionId=CONST001&driveFolderUrl=https%3A%2F%2Fdrive.google.com%2Fdrive%2Ffolders%2Fxxxxx
+```bash
+cp .env.example .env.local   # 値を記入（.env.local は Git 管理外）
+npm install
+npm run dev                  # http://localhost:3000/mock
 ```
 
-## 5. JUST.DBに登録するアプリURL
+`.env.local` に必要な値:
 
-以下をそのままテンプレートとして登録する。
+- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`（サーバー専用・クライアントに出さない）
+- `REPORT_LINK_SECRET`（将来のトークン検証用）
+
+Supabaseの初期化（プロジェクト作成→`docs/supabase/schema-and-seed.sql` 実行→疎通確認）は
+`docs/architecture/justdb-supabase-integration.md` の「セットアップ」を参照。
+
+## 2. Vercelデプロイ
+
+1. Vercel にログイン → `Add New...` → `Project`
+2. GitHub の `SeibuShodoku/report-app-justdb` を選択（Framework: Next.js）
+3. Project Settings → Environment Variables に設定:
+   - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`
+   - `REPORT_LINK_SECRET`（将来トークン有効化時）
+4. `Deploy`
+
+注意:
+- ローカルFS保存（旧 `data/reports`）はVercelで永続しない。永続はDrive（＋Supabase）が担う。
+- 実行基盤は確定ではない（`spec/open-issues.md`）。
+
+## 3. JUST.DB起動リンク（将来）
 
 ```text
 https://<vercel-domain>/report/new?caseId={案件ID}&investigationId={調査予定ID}&constructionId={施工予定ID}&driveFolderUrl={URLエンコード済みGoogleDriveフォルダURL}
 ```
 
-## 6. CLI利用（任意）
+パラメータ定義は `architecture/justdb-supabase-integration.md`。
 
-ローカルから実施する場合。
+## 4. CLI（任意）
 
 ```bash
-npm i -g vercel
-vercel login
-cd /home/ishibashi/dev/projects/report-app-justdb
-vercel
-vercel --prod
+npm i -g vercel && vercel login && vercel && vercel --prod
 ```

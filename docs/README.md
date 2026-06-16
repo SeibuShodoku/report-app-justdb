@@ -1,23 +1,33 @@
 # ドキュメント一覧
 
-本リポジトリの仕様・設計ドキュメントの入口です。
+西武消毒の防除作業報告書アプリの仕様・設計の入口。
 
-## 1. 仕様
+## 現在地（2026-06）
 
-- `docs/spec/requirements.md`: 目的、スコープ、決定事項
-- `docs/spec/integration-justdb.md`: JUST.DB連携仕様（URLパラメータ方式）
-- `docs/spec/report-pdf.md`: ページ構成、写真レイアウト、注記、PDF仕様
-- `docs/spec/open-issues.md`: 未確定事項
+紺谷V／写真報告書／融合をタブ切替で出すモック（`/mock`）が稼働。Supabaseに繋ぎ、
+害虫→薬剤→処理方法のカスケードと施工予定IDによるケース取得をライブ確認済み（プレゼン可）。
 
-## 2. 設計
+## 1. 仕様（spec）
 
-- `docs/architecture/repository-structure.md`: リポジトリ構成方針
-- `docs/architecture/vercel-drive.md`: Vercel + Drive運用方針
+- `spec/requirements.md`: 目的・スコープ・現行の決定事項
+- `spec/report-formats.md`: 紺谷V／写真報告書／融合の構成、PDF・写真・注記・設定JSON
+- `spec/open-issues.md`: 未確定事項
+
+## 2. 設計（architecture）
+
+- `architecture/overview.md`: 全体像（役割分担・データフロー・保管・統合戦略）
+- `architecture/justdb-supabase-integration.md`: JUST.DB連携・カスケード・同期・書き戻し
+- `architecture/repository-structure.md`: リポジトリ構成（現況）
 
 ## 3. Runbook
 
-- `docs/runbook/deploy-vercel.md`: Vercelデプロイ手順
+- `runbook/deploy-vercel.md`: ローカル開発／Vercelデプロイ手順
 
-## 4. アーカイブ
+## 4. 参照・資産
 
-- `docs/archive/closed-decisions-2026-04.md`: クローズ済み論点
+- `reference/防除作業報告書-原本-2006.xlsx`: 紺谷Vの原本Excel
+- `supabase/schema-and-seed.sql`: Supabaseスキーマ＋シード
+
+## 5. アーカイブ
+
+- `archive/README.md`: 旧仕様・クローズ済み論点（一部は見直し済み）

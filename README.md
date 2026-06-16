@@ -1,45 +1,35 @@
 # report-app-justdb
 
-JUST.DB起点で1件単位の報告書を作成し、最終的にPDFを生成するWebアプリです。
+西武消毒の**防除作業報告書**をWEBで作成し、PDF出力するアプリ。
+JUST.DBを正本、Supabaseをミラー・取得層、WEBを作成・出力、Google Driveを保管に使う。
 
-## 現在の方針
+## 現在地
 
-- JUST.DB連携はURLパラメータ方式を採用
-- JUST.DBへの書き戻しは行わない（起動元のみ）
-- 受信した案件ID/調査予定ID/施工予定IDを外部キーとしてアプリ側で保存する
-- 保存先はGoogle Drive（既存案件フォルダ）
-- JUST.DBからは `driveFolderUrl` を渡す
-- 既定の保存方式は方式B（帳票に割り当てた写真のみ）
-- 実行基盤はVercel
-- 正式帳票はPDF出力を採用
+同一データから**タブ切替で紺谷V／写真報告書／融合**を出すモック（`/mock`）が稼働。
+Supabaseに接続し、害虫→薬剤→処理方法のカスケードと、施工予定IDによるケース取得をライブ確認済み。
 
-## ドキュメント
+## 方針（要点）
 
-- 仕様入口: `docs/README.md`
-- 要件定義: `docs/spec/requirements.md`
-- JUST.DB連携: `docs/spec/integration-justdb.md`
-- PDF仕様: `docs/spec/report-pdf.md`
-- 未確定事項: `docs/spec/open-issues.md`
-- Vercel/Drive方針: `docs/architecture/vercel-drive.md`
+- 本丸は施工報告書（防除作業報告書＝紺谷V）。写真報告書と融合可能にする
+- アンカーは施工予定ID（→案件ID→受注ID/見積書）
+- 薬剤資材はSupabaseにミラーし、カスケードで絞り込む
+- JUST.DBへは限定フィールド（金額・回数・薬剤・要約）を書き戻す
+- 保存はDrive（PDF＋再編集JSON＋写真、方式B、管理番号で連結）
+
+詳細は `docs/README.md`（全体像は `docs/architecture/overview.md`）。
 
 ## セットアップ
 
 ```bash
-cd /home/ishibashi/dev/projects/report-app-justdb
-cp .env.example .env.local
+cp .env.example .env.local   # SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY などを記入
 npm install
-npm run dev
+npm run dev                  # http://localhost:3000/mock
 ```
 
-## 起動方法（URLパラメータ方式）
-
-例:
-
-```text
-/report/new?caseId=CASE001&investigationId=INV001&constructionId=CONST001&driveFolderUrl=https%3A%2F%2Fdrive.google.com%2Fdrive%2Ffolders%2Fxxxxx
-```
+Supabaseの初期化は `docs/architecture/justdb-supabase-integration.md` を参照。
 
 ## 環境変数
 
-- `REPORT_LINK_SECRET`: 将来のトークン検証で使用する秘密鍵
-- `REPORT_STORAGE_DIR`: 報告書JSON保存先（未指定時 `data/reports`）
+- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`: 薬剤資材ミラー・ケースデータ取得（サーバー専用）
+- `REPORT_LINK_SECRET`: 将来のトークン検証用
+- `REPORT_STORAGE_DIR`: 旧・ローカル保存先（本番非永続。Drive保管へ置換予定）
