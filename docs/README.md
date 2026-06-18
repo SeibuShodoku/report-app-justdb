@@ -21,9 +21,10 @@
 - `architecture/justdb-supabase-integration.md`: JUST.DB連携・カスケード・同期・書き戻し
 - `architecture/repository-structure.md`: リポジトリ構成（現況）
 
-## 3. Runbook
+## 3. Runbook / デプロイ
 
-- `runbook/deploy-vercel.md`: ローカル開発／Vercelデプロイ手順
+- `runbook/deploy-vercel.md`: ローカル開発／デプロイ手順
+- `deployment.md`: **デプロイ配置メモ**（Cloud Run / OAuth / SA / VM など資源の所在＝管理3面の地図）
 
 ## 4. 参照・資産
 
