@@ -1,0 +1,11 @@
+# gcloud run deploy --source のアップロード対象から除外（Cloud Build へ送るソース）。
+# 秘密(.env*)は絶対に上げない。node_modules/.next は Docker 内で再生成。
+.git
+node_modules
+.next
+.env*
+!.env.example
+*.log
+tsconfig.tsbuildinfo
+worker
+data/reports
