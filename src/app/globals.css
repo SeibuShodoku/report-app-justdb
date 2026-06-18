@@ -211,3 +211,38 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* PDF（印刷）用。報告書を A4 固定で出し、操作系を除去する（report-formats.md §8）。 */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  main {
+    display: block;
+    padding: 0;
+    min-height: 0;
+  }
+
+  .panel {
+    width: 100%;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  /* 写真カードがページ境界で割れないようにする。 */
+  .photo-card {
+    break-inside: avoid;
+  }
+}

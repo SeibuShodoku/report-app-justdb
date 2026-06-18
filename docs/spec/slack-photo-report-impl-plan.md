@@ -14,7 +14,7 @@
 ### 着手前に潰す最小の決定（仕様 §10 のうち着手必須のもの）
 - report JSON 置き場：**まず Supabase**（本アプリが既に接続・実装が速い）。Drive 再編集 JSON への移行は後（migrate-on-touch）。
 - ジョブ置き場：**Supabase テーブル**（`photo_report_jobs`）。
-- Drive 資格情報：**SA 鍵**（対象フォルダを SA に共有 or 共有ドライブ）。
+- Drive 資格情報：**社内ユーザーの OAuth refresh token**（dispatch-app 標準）。※外部 SA は不可（実証 2026-06-18・§1a 参照）。
 - トリガー：**メッセージショートカット**（スレッド ts を確実に取得）。
 - ↑は提案。確定後にこの節を更新する。
 
@@ -22,10 +22,21 @@
 
 ## フェーズ 1：WEB / BFF（`report-app-justdb`）★最初
 
-### 1a. Drive 資格情報（SA）
-- [ ] GCP で SA 作成（report-app-justdb 用）、Drive API 有効化、SA 鍵 JSON 取得。
-- [ ] 対象フォルダ（または共有ドライブ）を SA のメールに共有。
-- [ ] サーバー専用 env 追加：`GOOGLE_SA_KEY_JSON`（or パス）、`DRIVE_PROXY_SERVER_SECRET`（VM↔WEB 用）。`.env.example` 更新。
+### 1a. Drive 資格情報（社内ユーザー OAuth refresh token）
+
+> **経緯（2026-06-18）**：当初 外部サービスアカウント(`report-drive-reader@seibot-proxy…`)で実装したが、
+> Workspace は外部プリンシパルにフォルダ継承を波及させないため、フォルダ共有しても中の写真を読めなかった
+> （個別ファイル共有なら読めたが自動化で非現実的）。dispatch-app と同じ**社内ユーザー OAuth**へ切替。
+> コードは `src/lib/drive.ts` の `getAccessToken()` を refresh_token 交換に改修済み（REST 部は不変）。
+
+**必要な入力（落ち着いてやる手順。dispatch-app `docs/gcp/gas_gcp_setup.md §3` と同じ流儀）:**
+- [ ] **OAuth クライアントを用意**：既存の dispatch-app 用クライアントを流用してよい（`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`）。
+- [ ] そのクライアントが属する **GCP プロジェクトで Drive API を有効化**（Calendar/Gmail と同様）。
+- [ ] **refresh token を1本発行**：OAuth Playground（歯車→Use your own OAuth credentials → client_id/secret 入力）で
+      scope = `https://www.googleapis.com/auth/drive.readonly` を指定し、**フォルダを読める社内アカウント（当面 mgmt-strat@seibu-s.co.jp）**で同意 → `Exchange authorization code for tokens` で refresh_token 取得。
+      （既存の Calendar トークンに混ぜず、報告書用に独立発行する＝最小権限）
+- [ ] **report-app の `.env.local` に設定**：`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_DRIVE_REFRESH_TOKEN` / `DRIVE_PROXY_SERVER_SECRET`。本番(Vercel)は同名の env を設定。`.env.example` 更新済み。
+- [ ] **後片付け**：不要になった外部 SA `report-drive-reader@seibot-proxy.iam.gserviceaccount.com`（鍵含む）を削除、`.env.local` の旧 `GOOGLE_SA_KEY_JSON` 行を除去。OAuth 経路の疎通確認後に実施。
 
 ### 1b. 画像プロキシ
 - [ ] `src/lib/drive.ts`：SA 認証の Drive REST 薄ラッパ（`files.list` / `files.get?alt=media`、`supportsAllDrives`）。`supabase-rest.ts` と同じく fetch ベース・サーバー専用。
@@ -35,10 +46,15 @@
 - [ ] （任意）プロキシ側でサムネ/リサイズ供給（vision コスト・表示速度）。
 
 ### 1c. report JSON 取り込み＋プリフィル
-- [ ] `photo_report_jobs` と report JSON を Supabase に保存するスキーマ追加（`docs/supabase/` にDDL追記）。
-- [ ] `src/schemas/report.ts` に **report JSON（入力）スキーマ**を追加（既存 `reportPhotoItemSchema`/`reportSubmissionSchema` を再利用、`imageUrl`=プロキシURL）。
-- [ ] 写真報告書ページ（`/mock` の写真タブ or 新規 `/report/photo`）が **launchContext（folderId/caseId/token）から report JSON を取得しプリフィル表示**。
-- [ ] 既存の赤丸注記/PDF（`window.print()`）はそのまま接続（本計画では新規実装しない＝既存 open-issue）。
+- [x] **report JSON スキーマ**：`src/schemas/photo-report.ts`（`photoReportDraftSchema`・Drive fileId 参照・枚数緩和）。
+- [x] **プリフィル元ヘルパー**：`src/lib/photo-report-source.ts`（`imagesToView`/`loadPhotoReportView`/`photoProxyUrl`。当面フォルダ画像から素の下書きを合成）。
+- [x] **写真報告書ページ**：`src/app/report/photo/page.tsx`（launchContext＋トークン検証→Drive 写真を `/api/photo` 経由で並べる。見出し/注記は当面空）。
+- [x] **report JSON エンドポイント**：`src/app/api/photo-report/route.ts`（VM/再取得向け。当面フォルダ合成）。
+- [x] **PDF（印刷）**：`src/components/print-button.tsx`＋`globals.css @media print`（A4・操作系除去・カードのページ跨ぎ防止）。
+- [ ] （Phase 2 へ）`photo_report_jobs` と AI 生成 report JSON の **Supabase 保存**＝`loadPhotoReportView` の TODO で上書きする層。`docs/supabase/` に DDL 追記。
+- [ ] （別 open-issue）赤丸注記の描画は本計画では未実装。
+
+> 検証(2026-06-18)：typecheck/test(21)/lint 緑。:3000 実機で `/report/photo`(token無→アクセスエラー200)・`/api/photo-report`(Drive未設定503) を確認。**実写真表示は OAuth 認証情報(§1a)投入後に M1 として確定**。
 
 > **M1（WEB 単体）**：手書きの report JSON ＋実フォルダで WEB URL を開く → Drive の写真がプリフィル表示され、PDF 保存できる。AI も Slack もまだ無し。
 
