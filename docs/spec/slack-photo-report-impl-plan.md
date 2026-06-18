@@ -64,13 +64,17 @@
 
 ## フェーズ 2：VM の AI ワーカー（VM 常駐 Claude）
 
-設置：`/mnt/claude-data/projects/photo-report-worker`（永続ディスク）。**Google 資格情報は持たない**。
+コード＝`worker/photo-report-worker.mjs`（素の node・ビルド不要）。VM では `/mnt/claude-data/projects` にリポを置き tmux で常駐。**Google 資格情報は持たない**。
 
-- [ ] ジョブ取得：`photo_report_jobs` を Supabase REST でポーリング（status=queued）。冪等キー＝`(channel,thread_ts,folderId)`。
-- [ ] 写真取得：WEB の `/api/folder`→`/api/photo`（`DRIVE_PROXY_SERVER_SECRET`）でバイト取得。Drive は触らない。
-- [ ] AI 生成：Claude（**Team/API 認証**＝D-AIDATA）で写真＋スレッド文脈 → report JSON（`heading`/`annotationNote`/並び/`headerSummary`）。スキーマに valid であること（zod 相当で検証）。
-- [ ] 保存：report JSON を Supabase に書き、ジョブを done に。失敗は error＋再実行可能に。
-- [ ] 常駐：tmux で起動（`GCP_VM_Claude_構築手順.md` §11）。落ちたら再開できるよう状態は Supabase 側に。
+- [x] ジョブ取得：`photo_report_jobs` を Supabase REST でポーリング、status=eq.queued を条件付き PATCH で claim（多重取得防止）。
+- [x] 写真取得：`/api/folder`→`/api/photo`（`x-proxy-secret`）で作業ディレクトリへDL（ファイル名=fileId）。Drive は触らない。
+- [x] AI 生成：**VM の Claude Code をヘッドレス起動**（`claude -p …`・Team サブスク認証＝D-AIDATA・APIキー不要）で `report.json` を書かせる。
+- [x] 検証＋保存：zod（`reportJsonSchema`＝`photo-report.ts`ミラー）で検証 → `photo_reports` に upsert、ジョブ done。失敗は error＋attempts++。
+- [x] WEB 側：`loadPhotoReportView` が `photo_reports` の保存JSONを優先し `overlayReport` で見出し/注記/並び/要約を上書き（テーブル未作成でもフォルダ合成へフォールバック）。
+- [x] DDL：`docs/supabase/slack-photo-report-schema.sql`（`photo_report_jobs` / `photo_reports`）。
+- [ ] **実行（M2ブロッカー・外部）**：①DDLをSupabaseに適用 ②VMでリポ配置＋`claude`ログイン済み ③手動ジョブ投入 ④`node worker/photo-report-worker.mjs` 起動。Claude Code ヘッドレスのフラグはVMで `claude --help` を見て最終調整（worker/README.md）。
+
+> 検証(2026-06-18)：worker `node --check`・typecheck・test(24)・lint 緑。実行通し（M2）は DDL適用＋VM上Claude Code が要るため未。
 
 > **M2（Slack 抜き E2E）**：`photo_report_jobs` に手動で 1 行入れる → ワーカーが report JSON を生成 → M1 の WEB URL が **AI プリフィル**で開く。
 
