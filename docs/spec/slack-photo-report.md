@@ -94,8 +94,10 @@ Drive ──(プロキシが Drive API)──▶ report-app-justdb(サーバー)
 - **認証（同一エンドポイントを 2 種が叩くので入口で出し分け）**
   - ブラウザ：`launchContext.token`（既存 `src/lib/security/launch-token.ts` ／ `REPORT_LINK_SECRET`）。**トークンが許可するフォルダの画像しか返さない**＝プロキシが権限境界も兼ねる。
   - VM：サーバー間用の共有シークレット。
-- **Drive 資格情報**：サーバー間用に **サービスアカウント（SA 鍵）**。対象が共有ドライブならメンバー追加、マイドライブ配下なら親フォルダを SA に共有。
-  （このパターンは visit-planner の「ライブ参照 BFF」と同型。）
+- **Drive 資格情報**：**社内ユーザーの OAuth refresh token**（`grant_type=refresh_token`）で、ドメイン内ユーザーとして読む。dispatch-app の標準方式（`seibu-shodoku-dispatch-app/gas/20_oauth_token.gs` ／ `docs/gcp/gas_gcp_setup.md §3`）と同じ。
+  - **外部サービスアカウントは不可**（実証 2026-06-18）：フォルダを SA に共有しても、Workspace は外部プリンシパルに**フォルダ継承を波及させない**ため中の写真が読めない（個別共有なら読めるが自動化で非現実的）。報告書フォルダはドメイン共有なので、**社内ユーザーの OAuth なら継承で即読める**。
+  - 大量運用・統制強化時のみ SA+Domain-Wide Delegation を再検討（dispatch-app `gas/21_gws_dwd_token.gs` に前例）。
+  - 環境変数：`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`（既存 OAuth クライアント流用可）/ `GOOGLE_DRIVE_REFRESH_TOKEN`（scope=`drive.readonly`・フォルダを読める社内アカウントが同意）。
 
 ## 8. データ方針・非機能
 

@@ -1,23 +1,20 @@
 /**
  * Google Drive への最小クライアント（画像プロキシ BFF 用）。
- * - SDK 非依存（fetch のみ）。SA 認証の JWT だけ node:crypto で組む（依存を増やさない）。
- * - サーバー専用。SA 鍵はクライアントへ渡さない。
+ * - SDK 非依存（fetch のみ）。
+ * - サーバー専用。OAuth クライアント秘密 / refresh token はクライアントへ渡さない。
+ * - 認証は「社内ユーザーの OAuth refresh token」方式（dispatch-app の標準と同じ。
+ *   `seibu-shodoku-dispatch-app/gas/20_oauth_token.gs` 参照）。
+ *   外部サービスアカウントだと社内 Drive のフォルダ継承が効かず中身を読めないため、
+ *   ドメイン内ユーザーとして読む（フォルダはドメイン共有なので社内ユーザーなら可）。
  * - 用途は読み取りのみ（一覧 files.list / メタ files.get / 実体 alt=media）。
  *
  * 仕様: report-app-justdb/docs/spec/slack-photo-report.md §7（画像プロキシ）
  */
-import { createSign } from "node:crypto";
-
-const SA_KEY_JSON = process.env.GOOGLE_SA_KEY_JSON;
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
-const DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token";
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const REFRESH_TOKEN = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+const TOKEN_URI = "https://oauth2.googleapis.com/token";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
-
-type ServiceAccountKey = {
-  client_email: string;
-  private_key: string;
-  token_uri?: string;
-};
 
 export type DriveImage = {
   fileId: string;
@@ -27,69 +24,42 @@ export type DriveImage = {
   size?: string;
 };
 
-/** SA 鍵が環境に設定済みか。 */
+/** OAuth 認証情報が環境に揃っているか。 */
 export function driveConfigured(): boolean {
-  return Boolean(SA_KEY_JSON);
-}
-
-function getServiceAccount(): ServiceAccountKey {
-  if (!SA_KEY_JSON) {
-    throw new Error("GOOGLE_SA_KEY_JSON が未設定です。");
-  }
-  const sa = JSON.parse(SA_KEY_JSON) as ServiceAccountKey;
-  if (!sa.client_email || !sa.private_key) {
-    throw new Error("GOOGLE_SA_KEY_JSON に client_email / private_key がありません。");
-  }
-  return sa;
-}
-
-function base64Url(input: string | Buffer): string {
-  return Buffer.from(input).toString("base64url");
+  return Boolean(CLIENT_ID && CLIENT_SECRET && REFRESH_TOKEN);
 }
 
 // アクセストークンのプロセス内キャッシュ（expiry の少し手前で失効扱い）。
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
 /**
- * SA の JWT bearer フローでアクセストークンを取得する（キャッシュ付き）。
+ * refresh token をアクセストークンに交換する（キャッシュ付き）。
+ * dispatch-app `fetchAccessTokenByRefreshToken` と同じ grant_type=refresh_token。
  */
 async function getAccessToken(): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   if (cachedToken && cachedToken.expiresAt - 60 > now) {
     return cachedToken.value;
   }
+  if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN) {
+    throw new Error(
+      "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_DRIVE_REFRESH_TOKEN が未設定です。"
+    );
+  }
 
-  const sa = getServiceAccount();
-  const tokenUri = sa.token_uri ?? DEFAULT_TOKEN_URI;
-
-  const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claim = base64Url(
-    JSON.stringify({
-      iss: sa.client_email,
-      scope: DRIVE_SCOPE,
-      aud: tokenUri,
-      iat: now,
-      exp: now + 3600
-    })
-  );
-  const signingInput = `${header}.${claim}`;
-  const signature = createSign("RSA-SHA256")
-    .update(signingInput)
-    .end()
-    .sign(sa.private_key);
-  const assertion = `${signingInput}.${base64Url(signature)}`;
-
-  const res = await fetch(tokenUri, {
+  const res = await fetch(TOKEN_URI, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      refresh_token: REFRESH_TOKEN,
+      grant_type: "refresh_token"
     }),
     cache: "no-store"
   });
   if (!res.ok) {
-    throw new Error(`SA トークン取得失敗 ${res.status}: ${await res.text()}`);
+    throw new Error(`OAuth トークン更新失敗 ${res.status}: ${await res.text()}`);
   }
   const json = (await res.json()) as { access_token: string; expires_in: number };
   cachedToken = {
