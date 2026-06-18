@@ -57,6 +57,8 @@
 > 検証(2026-06-18)：typecheck/test(21)/lint 緑。:3000 実機で `/report/photo`(token無→アクセスエラー200)・`/api/photo-report`(Drive未設定503) を確認。**実写真表示は OAuth 認証情報(§1a)投入後に M1 として確定**。
 
 > **M1（WEB 単体）**：手書きの report JSON ＋実フォルダで WEB URL を開く → Drive の写真がプリフィル表示され、PDF 保存できる。AI も Slack もまだ無し。
+> **✅ 達成(2026-06-18)**：社内ユーザー OAuth(mgmt-strat・drive.readonly)＋OAuthクライアントのGCPプロジェクト(seibu-dispatch-poc-tky)でDrive API有効化 → 実Next(:3000)で `/api/folder`=52枚 / `/api/photo`=200 image/jpeg / `/report/photo`=全52枚プリフィル表示＋印刷ボタン、を確認。テストフォルダ=`1Xh3YpmburdGm98gOGZxsiuPb-VqlgLj3`。
+> 要片付け：`.env.local` の `DRIVE_PROXY_SERVER_SECRET` 重複行（プレースホルダ）削除、`REPORT_LINK_SECRET` を本番前に実乱数へ。
 
 ---
 
