@@ -24,12 +24,16 @@ Supabaseの初期化（プロジェクト作成→`docs/supabase/schema-and-seed
 2. GitHub の `SeibuShodoku/report-app-justdb` を選択（Framework: Next.js）
 3. Project Settings → Environment Variables に設定:
    - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`
-   - `REPORT_LINK_SECRET`（将来トークン有効化時）
+   - `REPORT_LINK_SECRET`（起動トークン署名・検証。ローカルと同値にすると同じトークンが通る）
+   - 画像プロキシ（Slack写真報告書）: `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_DRIVE_REFRESH_TOKEN`（社内ユーザーOAuth・drive.readonly）
+   - `DRIVE_PROXY_SERVER_SECRET`（VM ワーカーと**同値**にする）
+   - すべてサーバー専用＝`NEXT_PUBLIC_` は付けない。`REPORT_STORAGE_DIR` は旧ローカル保存用で不要。
 4. `Deploy`
 
 注意:
 - ローカルFS保存（旧 `data/reports`）はVercelで永続しない。永続はDrive（＋Supabase）が担う。
 - 実行基盤は確定ではない（`spec/open-issues.md`）。
+- Drive 読み取りは外部SA不可（Workspaceがフォルダ継承を外部に波及させない）。社内ユーザーOAuthで読む（仕様 §7 / `slack-photo-report-impl-plan.md` §1a）。
 
 ## 3. JUST.DB起動リンク（将来）
 
