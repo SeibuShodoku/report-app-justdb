@@ -1,15 +1,18 @@
 /**
- * 写真報告書 AI ワーカー（VM 常駐・フェーズ2）。
+ * 写真報告書 AI ワーカー（VM 常駐・フェーズ2 / 方式Y）。
  *
  * 流れ（仕様: docs/spec/slack-photo-report.md / 実装計画 §2）:
  *   1. Supabase `photo_report_jobs` の queued を1件 claim（processing 化）
- *   2. report-app の画像プロキシ（/api/folder → /api/photo, x-proxy-secret）で写真を作業ディレクトリへDL
+ *   2. **Drive を直接読む**（mgmt-strat の OAuth refresh token・drive.readonly）。
+ *      ＝案件フォルダ群は mgmt-strat 所有ツリー配下なので、他者所有の写真も継承で読める。
  *   3. **VM 上の Claude Code をヘッドレス起動**して report.json を書かせる（Team サブスク認証・APIキー不要）
  *   4. report.json を検証（zod）し `photo_reports` に upsert、ジョブを done に
  *   5. 失敗は error＋attempts++ で記録、ポーリング継続
  *
+ * 方式Yの経緯: Cloud Run 直結IAP がヘッドレス用 audience(client_id) を露出しないため、
+ *   worker は IAP 越しのプロキシではなく Drive を直読みする。IAP はブラウザ閲覧の保護として維持。
+ *
  * 実行（VM）: 必要 env を入れて `node worker/photo-report-worker.mjs`（詳細は worker/README.md）。
- * 注意: Google 資格情報は持たない（写真は必ずプロキシ経由）。Claude は必ず VM の Team サブスク認証で動かす（D-AIDATA）。
  */
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -20,12 +23,15 @@ import { z } from "zod";
 // --- 設定（env） ---
 const SUPABASE_URL = req("SUPABASE_URL");
 const SUPABASE_KEY = req("SUPABASE_SERVICE_ROLE_KEY");
-const REPORT_APP_BASE = req("REPORT_APP_BASE"); // 例: http://localhost:3000 / https://<vercel>
-const PROXY_SECRET = req("DRIVE_PROXY_SERVER_SECRET");
+const CLIENT_ID = req("GOOGLE_CLIENT_ID");
+const CLIENT_SECRET = req("GOOGLE_CLIENT_SECRET");
+const REFRESH_TOKEN = req("GOOGLE_DRIVE_REFRESH_TOKEN");
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "claude";
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? "15000");
 const MAX_PHOTOS = Number(process.env.MAX_PHOTOS ?? "60"); // 1回の生成に渡す写真上限（サブスク消費の暴発防止）
 const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS ?? "300000");
+const TOKEN_URI = "https://oauth2.googleapis.com/token";
+const DRIVE_API = "https://www.googleapis.com/drive/v3";
 
 function req(name) {
   const v = process.env[name];
@@ -33,7 +39,7 @@ function req(name) {
   return v;
 }
 
-// --- report.json の検証スキーマ（src/schemas/photo-report.ts のミラー。worker を素の node で動かすため再掲） ---
+// --- report.json の検証スキーマ（src/schemas/photo-report.ts のミラー） ---
 const reportJsonSchema = z.object({
   headerSummary: z.string().max(2000).optional(),
   photoItems: z
@@ -47,7 +53,72 @@ const reportJsonSchema = z.object({
     .min(1)
 });
 
-// --- Supabase REST 薄ラッパ ---
+// --- Drive（直読み・mgmt-strat OAuth refresh token） ---
+let cachedToken = null;
+async function getDriveToken() {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedToken && cachedToken.expiresAt - 60 > now) return cachedToken.value;
+  const res = await fetch(TOKEN_URI, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      refresh_token: REFRESH_TOKEN,
+      grant_type: "refresh_token"
+    })
+  });
+  if (!res.ok) throw new Error(`Drive token更新失敗 ${res.status}: ${await res.text()}`);
+  const j = await res.json();
+  cachedToken = { value: j.access_token, expiresAt: now + j.expires_in };
+  return j.access_token;
+}
+
+async function listImages(folderId) {
+  const token = await getDriveToken();
+  const images = [];
+  let pageToken;
+  const q = `'${folderId.replace(/'/g, "\\'")}' in parents and mimeType contains 'image/' and trashed = false`;
+  do {
+    const params = new URLSearchParams({
+      q,
+      fields: "nextPageToken, files(id, name, mimeType)",
+      orderBy: "createdTime",
+      pageSize: "1000",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true"
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await fetch(`${DRIVE_API}/files?${params}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error(`Drive files.list ${res.status}: ${await res.text()}`);
+    const j = await res.json();
+    for (const f of j.files ?? []) images.push({ fileId: f.id, name: f.name, mimeType: f.mimeType });
+    pageToken = j.nextPageToken;
+  } while (pageToken);
+  return images;
+}
+
+function extFor(image) {
+  const m = /\.([a-zA-Z0-9]+)$/.exec(image.name ?? "");
+  if (m) return m[1].toLowerCase();
+  return image.mimeType === "image/png" ? "png" : "jpg";
+}
+
+async function downloadPhoto(image, dir) {
+  const token = await getDriveToken();
+  const res = await fetch(
+    `${DRIVE_API}/files/${encodeURIComponent(image.fileId)}?alt=media&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`Drive files.get(media) ${image.fileId} ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  // ファイル名 = fileId.ext にして、Claude が fileId をそのまま参照できるようにする。
+  writeFileSync(join(dir, `${image.fileId}.${extFor(image)}`), buf);
+}
+
+// --- Supabase REST ---
 async function sb(method, path, body, extraHeaders = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     method,
@@ -58,20 +129,15 @@ async function sb(method, path, body, extraHeaders = {}) {
       Accept: "application/json",
       ...extraHeaders
     },
-    body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store"
+    body: body ? JSON.stringify(body) : undefined
   });
   if (!res.ok) throw new Error(`Supabase ${method} ${path} -> ${res.status}: ${await res.text()}`);
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
 
-/** queued を1件 claim（status=eq.queued 条件付き更新で多重取得を防ぐ）。取れなければ null。 */
 async function claimJob() {
-  const queued = await sb(
-    "GET",
-    "photo_report_jobs?status=eq.queued&order=created_at.asc&limit=1&select=*"
-  );
+  const queued = await sb("GET", "photo_report_jobs?status=eq.queued&order=created_at.asc&limit=1&select=*");
   if (!queued || queued.length === 0) return null;
   const job = queued[0];
   const claimed = await sb(
@@ -80,58 +146,21 @@ async function claimJob() {
     { status: "processing", attempts: (job.attempts ?? 0) + 1, updated_at: new Date().toISOString() },
     { Prefer: "return=representation" }
   );
-  if (!claimed || claimed.length === 0) return null; // 競合で他が取った
+  if (!claimed || claimed.length === 0) return null;
   return claimed[0];
 }
 
 async function finishJob(id, patch) {
-  await sb("PATCH", `photo_report_jobs?id=eq.${id}`, {
-    ...patch,
-    updated_at: new Date().toISOString()
-  });
+  await sb("PATCH", `photo_report_jobs?id=eq.${id}`, { ...patch, updated_at: new Date().toISOString() });
 }
 
 async function upsertReport(folderId, caseId, reportJson) {
   await sb(
     "POST",
     "photo_reports",
-    {
-      folder_id: folderId,
-      case_id: caseId ?? null,
-      report_json: reportJson,
-      source: "ai",
-      generated_at: new Date().toISOString()
-    },
+    { folder_id: folderId, case_id: caseId ?? null, report_json: reportJson, source: "ai", generated_at: new Date().toISOString() },
     { Prefer: "resolution=merge-duplicates,return=minimal" }
   );
-}
-
-// --- 画像プロキシ ---
-async function listImages(folderId) {
-  const res = await fetch(
-    `${REPORT_APP_BASE}/api/folder?folderId=${encodeURIComponent(folderId)}`,
-    { headers: { "x-proxy-secret": PROXY_SECRET }, cache: "no-store" }
-  );
-  if (!res.ok) throw new Error(`/api/folder ${res.status}: ${await res.text()}`);
-  const json = await res.json();
-  return json.images ?? [];
-}
-
-function extFor(image) {
-  const m = /\.([a-zA-Z0-9]+)$/.exec(image.name ?? "");
-  if (m) return m[1].toLowerCase();
-  return image.mimeType === "image/png" ? "png" : "jpg";
-}
-
-async function downloadPhoto(folderId, image, dir) {
-  const res = await fetch(
-    `${REPORT_APP_BASE}/api/photo?fileId=${encodeURIComponent(image.fileId)}&folderId=${encodeURIComponent(folderId)}`,
-    { headers: { "x-proxy-secret": PROXY_SECRET }, cache: "no-store" }
-  );
-  if (!res.ok) throw new Error(`/api/photo ${image.fileId} ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  // ファイル名 = fileId.ext にして、Claude が fileId をそのまま参照できるようにする。
-  writeFileSync(join(dir, `${image.fileId}.${extFor(image)}`), buf);
 }
 
 const PROMPT = [
@@ -146,21 +175,16 @@ const PROMPT = [
 /** VM の Claude Code をヘッドレス起動して report.json を書かせる。 */
 function runClaude(dir) {
   return new Promise((resolve, reject) => {
-    // 注意: 権限プロンプトで止まらないようヘッドレス用フラグを付ける。
-    //   フラグは Claude Code のバージョンで差異があるため、VM で `claude --help` を見て M2 時に最終調整する。
+    // 権限プロンプトで止まらないようヘッドレス用フラグ。バージョン差があるため VM で `claude --help` を見て M2 時に最終調整。
     const args = ["-p", PROMPT, "--permission-mode", "acceptEdits"];
     const child = spawn(CLAUDE_BIN, args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
-    child.stdout.on("data", () => {});
     child.stderr.on("data", (d) => (stderr += d));
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       reject(new Error("Claude Code がタイムアウトしました。"));
     }, CLAUDE_TIMEOUT_MS);
-    child.on("error", (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
+    child.on("error", (e) => { clearTimeout(timer); reject(e); });
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code !== 0) reject(new Error(`Claude Code 異常終了 code=${code}: ${stderr.slice(0, 500)}`));
@@ -174,13 +198,11 @@ async function processJob(job) {
   try {
     const images = (await listImages(job.folder_id)).slice(0, MAX_PHOTOS);
     if (images.length === 0) throw new Error("フォルダに写真がありません。");
-    for (const img of images) await downloadPhoto(job.folder_id, img, dir);
+    for (const img of images) await downloadPhoto(img, dir);
 
     await runClaude(dir);
 
-    const raw = readFileSync(join(dir, "report.json"), "utf-8");
-    const reportJson = reportJsonSchema.parse(JSON.parse(raw));
-
+    const reportJson = reportJsonSchema.parse(JSON.parse(readFileSync(join(dir, "report.json"), "utf-8")));
     await upsertReport(job.folder_id, job.case_id, reportJson);
     await finishJob(job.id, { status: "done", error: null });
     console.log(`[done] job=${job.id} folder=${job.folder_id} photos=${images.length} items=${reportJson.photoItems.length}`);
@@ -193,8 +215,12 @@ async function processJob(job) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 async function loop() {
-  console.log(`photo-report-worker 起動。base=${REPORT_APP_BASE} interval=${POLL_INTERVAL_MS}ms`);
+  console.log(`photo-report-worker(方式Y/Drive直読み) 起動。interval=${POLL_INTERVAL_MS}ms`);
   for (;;) {
     try {
       const job = await claimJob();
@@ -205,10 +231,6 @@ async function loop() {
       await sleep(POLL_INTERVAL_MS);
     }
   }
-}
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 loop();
