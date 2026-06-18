@@ -118,6 +118,65 @@ async function downloadPhoto(image, dir) {
   writeFileSync(join(dir, `${image.fileId}.${extFor(image)}`), buf);
 }
 
+// --- 案件の文脈（フォルダ名＋同フォルダ/親フォルダの主要PDF） ---
+const MAX_CONTEXT_DOCS = Number(process.env.MAX_CONTEXT_DOCS ?? "5");
+// 文脈に有用なPDF（調査報告/見積/管理/点検/カルテ）を優先、請求書・地図は除外。
+const DOC_INCLUDE = /調査|報告|見積|管理|点検|カルテ|仕様|作業/;
+const DOC_EXCLUDE = /請求|navitime|map|route|invoice/i;
+
+async function getFileMeta(id) {
+  const token = await getDriveToken();
+  const res = await fetch(
+    `${DRIVE_API}/files/${encodeURIComponent(id)}?fields=id,name,parents&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`Drive files.get(meta) ${id} ${res.status}`);
+  return res.json();
+}
+
+async function listPdfs(folderId) {
+  const token = await getDriveToken();
+  const q = `'${folderId.replace(/'/g, "\\'")}' in parents and mimeType='application/pdf' and trashed = false`;
+  const params = new URLSearchParams({
+    q,
+    fields: "files(id, name)",
+    pageSize: "200",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true"
+  });
+  const res = await fetch(`${DRIVE_API}/files?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Drive files.list(pdf) ${res.status}`);
+  return (await res.json()).files ?? [];
+}
+
+/** フォルダ名・親フォルダ名と、文脈に使うPDF群を集める。 */
+async function gatherContext(folderId) {
+  const self = await getFileMeta(folderId);
+  const parentId = self.parents?.[0];
+  const parent = parentId ? await getFileMeta(parentId) : null;
+  const pdfs = [...(await listPdfs(folderId)), ...(parentId ? await listPdfs(parentId) : [])];
+  const picked = pdfs
+    .filter((f) => !DOC_EXCLUDE.test(f.name))
+    .sort((a, b) => (DOC_INCLUDE.test(b.name) ? 1 : 0) - (DOC_INCLUDE.test(a.name) ? 1 : 0))
+    .slice(0, MAX_CONTEXT_DOCS);
+  return { folderName: self.name, parentName: parent?.name ?? "", docs: picked };
+}
+
+function sanitize(name) {
+  return name.replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
+}
+
+async function downloadDoc(file, dir, idx) {
+  const token = await getDriveToken();
+  const res = await fetch(
+    `${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) return null; // 文脈書類は欠けても致命的でない
+  writeFileSync(join(dir, `context-${idx}-${sanitize(file.name)}`), Buffer.from(await res.arrayBuffer()));
+  return file.name;
+}
+
 // --- Supabase REST ---
 async function sb(method, path, body, extraHeaders = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -163,20 +222,28 @@ async function upsertReport(folderId, caseId, reportJson) {
   );
 }
 
-const PROMPT = [
-  "このディレクトリにある画像は、防除（害虫駆除）作業の現場写真です。",
-  "各写真について、日本語で簡潔な見出し(heading, 80字以内)と、所見・指摘(annotationNote, 500字以内)を付けてください。",
-  "全体の要約(headerSummary)も作ってください。写真は意味の通る順に並べ替えて構いません。",
-  "出力は **このディレクトリに report.json というファイルを1つ書き出す**こと。形式は厳密に次の JSON のみ:",
-  '{ "headerSummary": "…", "photoItems": [ { "fileId": "<ファイル名から拡張子を除いた部分>", "heading": "…", "annotationNote": "…" } ] }',
-  "fileId は各画像ファイル名の拡張子を除いた部分です（例 1AbC.jpg → fileId=1AbC）。提供された画像だけを使い、JSON以外の文章は report.json に書かないこと。"
-].join("\n");
+function buildPrompt(ctx, docFileNames) {
+  const docLine = docFileNames.length
+    ? `このディレクトリには現場写真(画像)に加え、案件書類のPDF（${docFileNames.join(" / ")}）があります。**まず書類を読み、実際の作業内容（対象生物・対策の種類など）を正確に把握**してから写真を説明してください。`
+    : "案件書類は無いので、フォルダ名と写真から判断してください。";
+  return [
+    "このディレクトリにある画像は、害虫防除（駆除）作業の現場写真です。これから写真報告書の下書きを作ります。",
+    docLine,
+    `参考フォルダ名: 親=「${ctx.parentName}」 / 当該=「${ctx.folderName}」。`,
+    "**写真だけで対象生物や作業を断定しない**こと（書類・フォルダ名の根拠を優先）。不明な点は無理に決めつけない。",
+    "各写真に、日本語で**短い見出し(heading・全角20字程度)**と、**簡潔な所見(annotationNote・1〜2文/全角120字程度)**を付けてください。冗長にしない。",
+    "全体の要約(headerSummary・3文程度)も作成。写真は意味の通る順に並べ替えてよい。",
+    "出力は **このディレクトリに report.json を1つ書き出す**こと。形式は厳密に次のJSONのみ:",
+    '{ "headerSummary": "…", "photoItems": [ { "fileId": "<画像ファイル名から拡張子を除いた部分>", "heading": "…", "annotationNote": "…" } ] }',
+    "fileId は各**画像**ファイル名の拡張子を除いた部分（例 1AbC.jpg → 1AbC）。context-*.pdf は文脈用で報告対象ではない。JSON以外の文章は report.json に書かないこと。"
+  ].join("\n");
+}
 
 /** VM の Claude Code をヘッドレス起動して report.json を書かせる。 */
-function runClaude(dir) {
+function runClaude(dir, prompt) {
   return new Promise((resolve, reject) => {
-    // 権限プロンプトで止まらないようヘッドレス用フラグ。バージョン差があるため VM で `claude --help` を見て M2 時に最終調整。
-    const args = ["-p", PROMPT, "--permission-mode", "acceptEdits"];
+    // 権限プロンプトで止まらないようヘッドレス用フラグ。
+    const args = ["-p", prompt, "--permission-mode", "acceptEdits"];
     const child = spawn(CLAUDE_BIN, args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
     child.stderr.on("data", (d) => (stderr += d));
@@ -200,12 +267,20 @@ async function processJob(job) {
     if (images.length === 0) throw new Error("フォルダに写真がありません。");
     for (const img of images) await downloadPhoto(img, dir);
 
-    await runClaude(dir);
+    // 案件文脈（フォルダ名＋主要PDF）を集めて同梱
+    const ctx = await gatherContext(job.folder_id);
+    const docNames = [];
+    for (let i = 0; i < ctx.docs.length; i++) {
+      const name = await downloadDoc(ctx.docs[i], dir, i);
+      if (name) docNames.push(name);
+    }
+
+    await runClaude(dir, buildPrompt(ctx, docNames));
 
     const reportJson = reportJsonSchema.parse(JSON.parse(readFileSync(join(dir, "report.json"), "utf-8")));
     await upsertReport(job.folder_id, job.case_id, reportJson);
     await finishJob(job.id, { status: "done", error: null });
-    console.log(`[done] job=${job.id} folder=${job.folder_id} photos=${images.length} items=${reportJson.photoItems.length}`);
+    console.log(`[done] job=${job.id} folder=${job.folder_id} photos=${images.length} docs=${docNames.length} items=${reportJson.photoItems.length}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await finishJob(job.id, { status: "error", error: message.slice(0, 1000) });
