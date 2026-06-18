@@ -79,6 +79,7 @@
 > 検証(2026-06-18)：worker `node --check`・typecheck・test(24)・lint 緑。実行通し（M2）は DDL適用＋VM上Claude Code が要るため未。
 
 > **M2（Slack 抜き E2E）**：`photo_report_jobs` に手動で 1 行入れる → ワーカーが report JSON を生成 → M1 の WEB URL が **AI プリフィル**で開く。
+> **✅ 達成(2026-06-19)**：VM(`/mnt/claude-data/projects/photo-report-worker`)で worker 起動→ジョブ(folder=テスト)を claim→**Drive直読み**で写真DL→**VMのClaude Codeをヘッドレス起動**(`claude -p --permission-mode acceptEdits`・実機検証済)→`report.json`(5件)生成→zod検証→`photo_reports` upsert→job done。AI出力は防鳥対策の専門的な見出し・所見・要約を生成（品質良好）。テストは MAX_PHOTOS=5。ページ閲覧はIAP(@seibu-s.co.jp SSO)越し。
 
 ---
 
