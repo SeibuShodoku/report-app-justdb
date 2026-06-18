@@ -12,6 +12,8 @@
 - `spec/requirements.md`: 目的・スコープ・現行の決定事項
 - `spec/report-formats.md`: 紺谷V／写真報告書／融合の構成、PDF・写真・注記・設定JSON
 - `spec/open-issues.md`: 未確定事項
+- `spec/slack-photo-report.md`: **Slack 写真 → AI 写真報告書**の自動生成（VM 常駐 Claude＋画像プロキシ BFF）。draft
+- `spec/slack-photo-report-impl-plan.md`: 上記の実装計画（WEB/BFF→VM AI→GAS の3トラック）。draft
 
 ## 2. 設計（architecture）
 
