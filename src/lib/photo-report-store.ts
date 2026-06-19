@@ -10,7 +10,9 @@ import {
   createTextFile,
   listFolderFiles,
   readTextFileById,
-  resolveReportVersionsDir
+  resolveReportVersionsDir,
+  setFileDescription,
+  trashFileById
 } from "@/lib/drive-write";
 import {
   buildVersionFile,
@@ -28,6 +30,7 @@ export type VersionListEntry = {
   version: number;
   fileId: string;
   modifiedTime?: string;
+  label?: string; // 人が付けた版名（Drive description）
 };
 
 /** 現在版を Supabase `photo_reports` に上書き（folder_id キー）。 */
@@ -57,6 +60,7 @@ export async function saveReportVersion(args: {
   report: PhotoReportDraft;
   source: ReportVersionSource;
   note?: string;
+  label?: string;
   folderName?: string;
 }): Promise<SavedVersion> {
   const { report } = args;
@@ -74,7 +78,8 @@ export async function saveReportVersion(args: {
     note: args.note,
     folderName: args.folderName
   });
-  await createTextFile(dirId, fileName, JSON.stringify(payload, null, 2));
+  // 版名（label）は Drive description＝メタデータに置く（本文は不変）。
+  await createTextFile(dirId, fileName, JSON.stringify(payload, null, 2), "application/json", args.label?.trim() || undefined);
   await upsertCurrent(report, args.source, payload.generatedAt);
 
   return { version, fileName, savedAt: payload.generatedAt };
@@ -89,10 +94,45 @@ export async function listReportVersions(folderId: string): Promise<VersionListE
   for (const f of files) {
     const version = parseVersionNumber(f.name);
     if (version === null) continue;
-    out.push({ version, fileId: f.id, modifiedTime: f.modifiedTime });
+    out.push({ version, fileId: f.id, modifiedTime: f.modifiedTime, label: f.description });
   }
   out.sort((a, b) => b.version - a.version);
   return out;
+}
+
+/** 版にラベル（版名）を付ける/変更する＝Drive description のみ更新（本文は不変）。 */
+export async function renameReportVersion(
+  folderId: string,
+  version: number,
+  label: string
+): Promise<void> {
+  const dirId = await resolveReportVersionsDir(folderId, false);
+  if (!dirId) throw new Error("版ディレクトリがありません。");
+  const files = await listFolderFiles(dirId);
+  const target = files.find((f) => parseVersionNumber(f.name) === version);
+  if (!target) throw new Error(`版 v${version} が見つかりません。`);
+  await setFileDescription(target.id, label.trim().slice(0, 200));
+}
+
+/**
+ * 版を削除する＝Drive ゴミ箱へ（復元可・物理削除しない）。
+ * **最新版は削除不可**（現在版＝Slack/ページの表示元・版番号連番の起点。先に別版へ戻すこと）。
+ */
+export async function deleteReportVersion(folderId: string, version: number): Promise<void> {
+  const dirId = await resolveReportVersionsDir(folderId, false);
+  if (!dirId) throw new Error("版ディレクトリがありません。");
+  const files = await listFolderFiles(dirId);
+  const versions = files
+    .map((f) => parseVersionNumber(f.name))
+    .filter((n): n is number => n !== null);
+  if (versions.length === 0) throw new Error("版がありません。");
+  const latest = Math.max(...versions);
+  if (version === latest) {
+    throw new Error("最新版は削除できません（現在版のため）。先に別の版へ戻してから削除してください。");
+  }
+  const target = files.find((f) => parseVersionNumber(f.name) === version);
+  if (!target) throw new Error(`版 v${version} が見つかりません。`);
+  await trashFileById(target.id);
 }
 
 /** 指定版の report（中身）を読む。版ファイルでなくても素の report として許容。 */

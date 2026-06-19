@@ -22,8 +22,10 @@
 │  │  │  ├─ photo/route.ts             ◇ Drive 画像バイト（画像プロキシ）
 │  │  │  ├─ photo-report/route.ts      ◇ 写真報告 プリフィルJSON（VM/再取得）
 │  │  │  ├─ photo-report/save/route.ts ◇ 保存＝新版(Drive append-only)＋現在版(Supabase)差替
-│  │  │  ├─ photo-report/versions/route.ts ◇ 版一覧
+│  │  │  ├─ photo-report/versions/route.ts ◇ 版一覧（版名=description 含む）
 │  │  │  ├─ photo-report/rollback/route.ts ◇ 旧版で新版を書く（監査）
+│  │  │  ├─ photo-report/rename/route.ts   ◇ 版名（Drive description・本文不変）
+│  │  │  ├─ photo-report/delete/route.ts   ◇ 版削除（Drive ゴミ箱・最新版不可）
 │  │  │  ├─ case-digest/route.ts       ◇ 案件ダイジェスト「口」（_ai/ 書込み）
 │  │  │  └─ reports/route.ts           ※ 旧・報告書保存（ローカルFS）
 │  │  ├─ page.tsx / layout.tsx / globals.css

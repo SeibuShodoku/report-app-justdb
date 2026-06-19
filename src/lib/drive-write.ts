@@ -176,15 +176,20 @@ export async function resolveReportVersionsDir(
   return findSubfolder(reports, photoFolderId);
 }
 
-export type DriveFileEntry = { id: string; name: string; modifiedTime?: string };
+export type DriveFileEntry = {
+  id: string;
+  name: string;
+  modifiedTime?: string;
+  description?: string;
+};
 
-/** 版ディレクトリ内の全ファイル（id/name/modifiedTime）を返す（版判定は呼び出し側）。 */
+/** 版ディレクトリ内の全ファイル（id/name/modifiedTime/description）を返す（版判定は呼び出し側）。 */
 export async function listFolderFiles(folderId: string): Promise<DriveFileEntry[]> {
   const token = await getWriteToken();
   const q = `'${folderId.replace(/'/g, "\\'")}' in parents and trashed = false`;
   const params = new URLSearchParams({
     q,
-    fields: "files(id,name,modifiedTime)",
+    fields: "files(id,name,modifiedTime,description)",
     pageSize: "1000",
     orderBy: "name",
     supportsAllDrives: "true",
@@ -202,18 +207,22 @@ export async function listFolderFiles(folderId: string): Promise<DriveFileEntry[
 /**
  * テキストファイルを **新規作成のみ**（upsert しない＝既存を上書きしない）。fileId を返す。
  * 版は append-only で不変にするため、保存は常に新ファイル名で create する。
+ * `description` は Drive メタデータ（人が付ける版名ラベル。報告内容＝本文は触らない）。
  */
 export async function createTextFile(
   folderId: string,
   name: string,
   content: string,
-  mimeType = "application/json"
+  mimeType = "application/json",
+  description?: string
 ): Promise<string> {
   const token = await getWriteToken();
+  const meta: Record<string, unknown> = { name, parents: [folderId] };
+  if (description) meta.description = description;
   const boundary = "b" + Date.now();
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-    JSON.stringify({ name, parents: [folderId] }) +
+    JSON.stringify(meta) +
     `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n` +
     content +
     `\r\n--${boundary}--`;
@@ -235,4 +244,26 @@ export async function readTextFileById(fileId: string): Promise<string> {
   });
   if (!res.ok) throw new Error(`Drive files.get(media) ${res.status}: ${await res.text()}`);
   return res.text();
+}
+
+/** ファイルの description（版名ラベル）を更新する。本文（報告内容）は触らない＝不変性を保つ。 */
+export async function setFileDescription(fileId: string, description: string): Promise<void> {
+  const token = await getWriteToken();
+  const res = await fetch(`${DRIVE_API}/files/${fileId}?fields=id&supportsAllDrives=true`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ description })
+  });
+  if (!res.ok) throw new Error(`Drive description更新 ${res.status}: ${await res.text()}`);
+}
+
+/** ファイルをゴミ箱へ（trashed=true・復元可）。物理削除はしない。 */
+export async function trashFileById(fileId: string): Promise<void> {
+  const token = await getWriteToken();
+  const res = await fetch(`${DRIVE_API}/files/${fileId}?fields=id&supportsAllDrives=true`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ trashed: true })
+  });
+  if (!res.ok) throw new Error(`Drive ゴミ箱移動 ${res.status}: ${await res.text()}`);
 }

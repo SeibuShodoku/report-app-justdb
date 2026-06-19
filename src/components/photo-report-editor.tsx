@@ -23,7 +23,7 @@ type EditItem = {
   annotations: Annotation[];
 };
 
-type VersionEntry = { version: number; fileId: string; modifiedTime?: string };
+type VersionEntry = { version: number; fileId: string; modifiedTime?: string; label?: string };
 
 type Props = {
   caseId: string;
@@ -56,6 +56,7 @@ export function PhotoReportEditor({
 }: Props & { initialView: PhotoReportView }) {
   const [items, setItems] = useState<EditItem[]>(() => toEditItems(initialView));
   const [headerSummary, setHeaderSummary] = useState(initialView.headerSummary ?? "");
+  const [saveLabel, setSaveLabel] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [versions, setVersions] = useState<VersionEntry[] | null>(null);
@@ -125,19 +126,78 @@ export function PhotoReportEditor({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ report: buildReport() })
+          body: JSON.stringify({ report: buildReport(), label: saveLabel.trim() || undefined })
         }
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? `保存に失敗（${res.status}）`);
-      setMessage({ type: "success", text: `保存しました（v${json.version}）。` });
+      setMessage({
+        type: "success",
+        text: `保存しました（v${json.version}${saveLabel.trim() ? `「${saveLabel.trim()}」` : ""}）。`
+      });
+      setSaveLabel("");
       if (versionsOpen) void refreshVersions();
     } catch (e) {
       setMessage({ type: "error", text: e instanceof Error ? e.message : "保存に失敗しました。" });
     } finally {
       setSaving(false);
     }
-  }, [folderId, token, buildReport, versionsOpen, refreshVersions]);
+  }, [folderId, token, buildReport, saveLabel, versionsOpen, refreshVersions]);
+
+  const renameVersion = useCallback(
+    async (version: number, current: string) => {
+      const label = window.prompt(`v${version} の版名`, current);
+      if (label === null) return; // キャンセル
+      setBusyVersion(version);
+      setMessage(null);
+      try {
+        const res = await fetch(
+          `/api/photo-report/rename?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ version, label })
+          }
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error ?? `版名の更新に失敗（${res.status}）`);
+        await refreshVersions();
+      } catch (e) {
+        setMessage({ type: "error", text: e instanceof Error ? e.message : "版名の更新に失敗しました。" });
+      } finally {
+        setBusyVersion(null);
+      }
+    },
+    [folderId, token, refreshVersions]
+  );
+
+  const deleteVersion = useCallback(
+    async (version: number) => {
+      if (!window.confirm(`v${version} を削除します（Drive のゴミ箱へ移動・復元可）。よろしいですか？`)) {
+        return;
+      }
+      setBusyVersion(version);
+      setMessage(null);
+      try {
+        const res = await fetch(
+          `/api/photo-report/delete?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ version })
+          }
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error ?? `削除に失敗（${res.status}）`);
+        await refreshVersions();
+      } catch (e) {
+        setMessage({ type: "error", text: e instanceof Error ? e.message : "削除に失敗しました。" });
+      } finally {
+        setBusyVersion(null);
+      }
+    },
+    [folderId, token, refreshVersions]
+  );
 
   const rollback = useCallback(
     async (version: number) => {
@@ -171,6 +231,14 @@ export function PhotoReportEditor({
     <section className="panel">
       <div className="inline-actions no-print">
         <h1>写真報告書</h1>
+        <input
+          type="text"
+          className="version-label-input"
+          value={saveLabel}
+          maxLength={200}
+          placeholder="版名（任意）"
+          onChange={(e) => setSaveLabel(e.target.value)}
+        />
         <button type="button" onClick={save} disabled={saving || items.length === 0}>
           {saving ? "保存中…" : "保存（新しい版）"}
         </button>
@@ -198,21 +266,43 @@ export function PhotoReportEditor({
             <p className="notice">まだ保存された版はありません（保存すると v0001 から記録されます）。</p>
           ) : (
             <ul className="version-list">
-              {versions.map((v) => (
-                <li key={v.version}>
-                  <span>
-                    v{v.version}
-                    {v.modifiedTime ? `・${new Date(v.modifiedTime).toLocaleString("ja-JP")}` : ""}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => rollback(v.version)}
-                    disabled={busyVersion !== null}
-                  >
-                    {busyVersion === v.version ? "戻し中…" : "この版に戻す"}
-                  </button>
-                </li>
-              ))}
+              {versions.map((v, vi) => {
+                const isLatest = vi === 0; // 降順なので先頭＝最新＝現在版
+                return (
+                  <li key={v.version}>
+                    <span>
+                      v{v.version}
+                      {isLatest ? "（現在版）" : ""}
+                      {v.label ? `・${v.label}` : ""}
+                      {v.modifiedTime ? `・${new Date(v.modifiedTime).toLocaleString("ja-JP")}` : ""}
+                    </span>
+                    <span className="version-actions">
+                      <button
+                        type="button"
+                        onClick={() => renameVersion(v.version, v.label ?? "")}
+                        disabled={busyVersion !== null}
+                      >
+                        名前
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => rollback(v.version)}
+                        disabled={busyVersion !== null}
+                      >
+                        {busyVersion === v.version ? "処理中…" : "この版に戻す"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteVersion(v.version)}
+                        disabled={busyVersion !== null || isLatest}
+                        title={isLatest ? "最新版（現在版）は削除できません。先に別版へ戻してください。" : "Drive のゴミ箱へ（復元可）"}
+                      >
+                        削除
+                      </button>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

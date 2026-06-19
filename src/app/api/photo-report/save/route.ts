@@ -47,6 +47,7 @@ export async function POST(request: Request) {
   // フォルダ/案件IDは認可済みの値を権威とする（ボディの値を信用しない）。
   const incoming = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const note = typeof incoming.note === "string" ? incoming.note : undefined;
+  const label = typeof incoming.label === "string" ? incoming.label : undefined;
   const folderName = typeof incoming.folderName === "string" ? incoming.folderName : undefined;
 
   const parsed = photoReportDraftSchema.safeParse({
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
       report: parsed.data,
       source: "human",
       note,
+      label,
       folderName
     });
     return Response.json(saved);

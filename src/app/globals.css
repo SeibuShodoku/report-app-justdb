@@ -241,8 +241,26 @@ button:disabled {
 
 .version-list li button {
   width: auto;
-  padding: 6px 12px;
+  padding: 6px 10px;
   font-size: 0.82rem;
+}
+
+.version-actions {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.version-list li span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.version-label-input {
+  width: auto;
+  max-width: 180px;
+  padding: 8px 10px;
 }
 
 /* 写真注記レイヤー（赤丸など） */
