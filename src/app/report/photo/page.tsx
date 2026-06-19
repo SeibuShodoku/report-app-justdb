@@ -1,6 +1,6 @@
-import { PrintButton } from "@/components/print-button";
+import { PhotoReportEditor } from "@/components/photo-report-editor";
 import { driveConfigured } from "@/lib/drive";
-import { loadPhotoReportView, photoProxyUrl } from "@/lib/photo-report-source";
+import { loadPhotoReportView } from "@/lib/photo-report-source";
 import { verifyLaunchToken } from "@/lib/security/launch-token";
 
 // Drive 読み取り（node:crypto/fetch）を行うため Node ランタイム固定・毎回最新を取得。
@@ -16,10 +16,10 @@ function pickParam(value: string | string[] | undefined): string | undefined {
 }
 
 /**
- * 写真報告書プリフィルページ。
- * 起動トークン（フォルダ一致）で認可し、Drive フォルダの写真を写真報告書として並べる。
- * 見出し・注記は当面空（Phase 2 で AI 生成 report JSON により充填）。
- * 例: /report/photo?folderId=DIR&caseId=CASE&token=...
+ * 写真報告書ページ。
+ * 起動トークン（フォルダ一致）で認可し、Drive 写真＋現在版(Supabase)をロードして
+ * 編集面（クライアント島 PhotoReportEditor）に渡す。保存＝新版／版＝ロールバック。
+ * 例: /report/photo?folderId=DIR&token=...
  */
 export default async function PhotoReportPage({ searchParams }: PageProps) {
   const sp = (await searchParams) ?? {};
@@ -64,10 +64,11 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
   // ここまでで token は検証済み。
   const safeFolderId = folderId as string;
   const safeToken = token as string;
+  const caseId = verifyLaunchToken(safeToken).caseId;
 
   let view;
   try {
-    view = await loadPhotoReportView(verifyLaunchToken(safeToken).caseId, safeFolderId);
+    view = await loadPhotoReportView(caseId, safeFolderId);
   } catch (error) {
     return (
       <main>
@@ -84,40 +85,12 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
 
   return (
     <main>
-      <section className="panel">
-        <div className="inline-actions no-print">
-          <h1>写真報告書</h1>
-          <PrintButton />
-        </div>
-        <p>案件ID: {view.caseId}</p>
-        {view.headerSummary ? <p>{view.headerSummary}</p> : null}
-        <p>写真 {view.photoItems.length} 枚</p>
-
-        {view.photoItems.length === 0 ? (
-          <p className="notice">このフォルダに写真がありません。</p>
-        ) : (
-          <div className="photo-grid">
-            {view.photoItems.map((item, index) => (
-              <figure key={item.fileId} className="photo-card">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  className="photo-preview"
-                  src={photoProxyUrl(item.fileId, safeFolderId, safeToken)}
-                  alt={item.heading || item.name}
-                />
-                <figcaption>
-                  <h3>{item.heading || `写真 ${index + 1}`}</h3>
-                  {item.annotationNote ? (
-                    <p>{item.annotationNote}</p>
-                  ) : (
-                    <p className="notice">（注記は未入力）</p>
-                  )}
-                </figcaption>
-              </figure>
-            ))}
-          </div>
-        )}
-      </section>
+      <PhotoReportEditor
+        initialView={view}
+        caseId={caseId}
+        folderId={safeFolderId}
+        token={safeToken}
+      />
     </main>
   );
 }

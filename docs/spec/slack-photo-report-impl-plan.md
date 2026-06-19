@@ -1,7 +1,7 @@
 # 写真報告書 自動生成（Slack 起点）実装計画書 v0.2
 
 最終更新：2026-06-19
-状態：**Phase 1/2/3a/3b/3c 達成（prod稼働・E2E検証済）。残= Phase4 版管理・注記**
+状態：**Phase 1/2/3a/3b/3c 達成（prod稼働・E2E検証済）。Phase4 版管理・注記＝実装/静的検証済（ブラウザ/Drive E2E待ち）。残= Phase5 締め**
 対象仕様（正本）：`../architecture/slack-photo-report-architecture.md`（本書はその実装手順）
 
 ## 0. 方針
@@ -125,12 +125,16 @@
 
 ---
 
-## フェーズ 4：版管理・注記（report-app 編集面）＝アーキ §5/§6
+## フェーズ 4：版管理・注記（report-app 編集面）＝アーキ §5/§6（✅実装/静的検証済 2026-06-19・ブラウザ/Drive E2E待ち）
 
-- [ ] **版スナップショット**：保存時に `_ai/reports/<folder_id>/v{連番}.json`（append-only・不変・自己記述）を Drive へ書く（`drive-write` 流用）＋ `photo_reports` を差替。
-- [ ] **ロールバック UI**：版一覧（`files.list`）→ 選んだ旧版の内容で新版を追記＋現在版差替（ロールバックも1版＝監査）。
-- [ ] **スキーマ予約**：`src/schemas/photo-report.ts` の各写真に `annotations: []` を追加（UI 前でも版互換のため先行）。
-- [ ] **注記 UI**：写真上の透明 SVG レイヤー＋Pointer Events（マウス/指/ペン）。図形=正規化座標で JSON 保持。選択/削除・色・UNDO/REDO（配列操作）。印刷でも崩れない。
+- [x] **スキーマ予約**：`src/schemas/photo-report.ts` に `annotationSchema`＋各写真 `annotations: z.array(...).default([])`。`photo-report-source.ts`（View/Stored/overlay）と worker ミラー schema まで貫通＝版互換。テスト追加。
+- [x] **版スナップショット**：保存時に `_ai/reports/<folder_id>/v{連番}.json`（append-only・不変・自己記述）を Drive へ書く＋ `photo_reports` を差替。
+  - `src/lib/report-versions.ts`（純粋：版名 parse/format/next・自己記述ファイル組立・単体テスト）／`drive-write.ts`（`getParentId`・`resolveReportVersionsDir`・`listFolderFiles`・`createTextFile`＝新規作成のみ＝不変・`readTextFileById`）／`photo-report-store.ts`（`saveReportVersion`/`listReportVersions`/`rollbackToVersion`）／`supabase-rest.ts` に `sbUpsert`。
+  - `POST /api/photo-report/save`（起動トークン認可・案件/フォルダIDは認可済み値を権威に上書き）。
+- [x] **ロールバック UI**：版一覧（`GET /api/photo-report/versions`）→ 選んだ旧版の内容で**新版を書く**（`POST /api/photo-report/rollback`・1版＝監査）。編集面は再読込で最新を反映。
+- [x] **注記 UI**：`src/components/photo-annotator.tsx`。写真上の透明 SVG＋Pointer Events（マウス/指/ペン）。赤丸/囲み/矢印/線/手書き/テキスト、色、選択/削除、UNDO/REDO（配列 push/pop）。座標=0〜1正規化（実表示boxを ResizeObserver で測り均一px空間で描画）。`PhotoReportEditor` に統合・保存に同梱。
+- [x] **編集面**：`src/components/photo-report-editor.tsx`（クライアント島）＝見出し/所見/全体要約/並び替え＋保存/版/印刷。`/report/photo` は server で auth＋ロード→島へ渡す。
+- [ ] **残＝E2E（人の通し）**：実フォルダで `/report/photo` を開き、編集→保存→Drive に v0001.json／Supabase 現在版差替→版一覧→ロールバック→赤丸描画→保存→印刷、を実データ1件で確認（要 Cloud Run デプロイ or ローカル creds）。
 
 ## フェーズ 5：堅牢化・締め
 

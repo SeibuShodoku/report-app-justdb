@@ -28,7 +28,7 @@ create table if not exists photo_reports (
   folder_id     text primary key,                -- Drive フォルダ＝報告書の単位
   case_id       text,
   report_json   jsonb not null,                  -- photoReportDraftSchema 準拠（fileId 参照・実画像は持たない）
-  source        text not null default 'ai',      -- ai / manual
+  source        text not null default 'ai',      -- ai（ワーカー再生成）/ human（人の保存・ロールバック）
   generated_at  timestamptz not null default now()
 );
 

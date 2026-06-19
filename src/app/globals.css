@@ -193,13 +193,128 @@ button:disabled {
 
 .slot-buttons {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
 }
 
 .slot-buttons button {
   padding: 6px 4px;
   font-size: 0.8rem;
+  width: auto;
+}
+
+/* 写真報告書 編集面 */
+.editor-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.editor-field label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.version-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #fff;
+}
+
+.version-list li span {
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.version-list li button {
+  width: auto;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+
+/* 写真注記レイヤー（赤丸など） */
+.annot {
+  display: grid;
+  gap: 6px;
+}
+
+.annot-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.annot-tool {
+  width: auto;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: #eef2f7;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.annot-tool.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.annot-colors {
+  display: inline-flex;
+  gap: 3px;
+  margin: 0 4px;
+}
+
+.annot-swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.annot-swatch.active {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.annot-wrap {
+  position: relative;
+  width: 100%;
+  line-height: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.annot-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.annot-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 @media (max-width: 860px) {
@@ -244,5 +359,21 @@ button:disabled {
   /* 写真カードがページ境界で割れないようにする。 */
   .photo-card {
     break-inside: avoid;
+  }
+
+  /* 編集面の入力欄は、印刷では枠を消して素のテキストとして出す。 */
+  .editor-field label {
+    display: none;
+  }
+
+  .editor-field input,
+  .editor-field textarea,
+  #headerSummary {
+    border: none !important;
+    padding: 0 !important;
+    background: transparent !important;
+    resize: none;
+    min-height: 0;
+    color: var(--text);
   }
 }

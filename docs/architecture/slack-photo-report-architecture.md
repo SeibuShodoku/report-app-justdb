@@ -105,8 +105,12 @@
 - ✅ **Slackトリガー入口**：hub-gas に「📸報告書」ボタン＋block_actions ハンドラ（pr_start/pr_create/pr_settings）。**prod デプロイ済**・テスター(`U023GCWKLCS`)ガード。VMワーカー prod 運用中（tmux `photo-worker`・MAX_PHOTOS=30）。
 - ✅ **写真サブフォルダ化**（§4）＋ **同日エフェメラル** ＋ **done/error 再投入**（Phase3b・hub-gas `a07d64c`・テスターE2E検証済 2026-06-19）。
 - ✅ **完了返信**（Phase3c・hub-gas `fd612b5`・prod検証済）：1分毎cron `pr_notifyDoneJobs` が done(未通知)を検知→スレッドへ[📝報告書を開く]→`pr_open` がクリック時に launch token URL を発行（生URLを焼かず期限切れ回避）。`photo_report_jobs.notified_at` で重複防止・再投入時null。
-- ⬜ **版管理（report-app）**：`_ai/reports/<id>/v*.json` 追記＋Supabase差替＋ロールバックUI。
-- ⬜ **annotations UI**（§6・スキーマ予約は先行）。
+- ✅ **版管理＋注記（report-app・Phase4・実装/静的検証済2026-06-19）**：`/report/photo` を編集面化。
+  - **編集**＝見出し/所見/全体要約/並び替え（クライアント島 `PhotoReportEditor`）。
+  - **保存＝新版**：Drive `_ai/reports/<folder_id>/v{連番}.json`(append-only・不変・自己記述) を1つ書き、Supabase 現在版を上書き（`POST /api/photo-report/save`）。版ディレクトリは**親案件フォルダ**の `_ai`（digest と共用）。
+  - **ロールバック**：版一覧（`GET …/versions`）→旧版の内容で**新版を書く**（`POST …/rollback`・1版＝監査）。
+  - **注記（§6）**＝`PhotoAnnotator`：写真上の透明SVG＋Pointer Events（マウス/指/ペン）。赤丸/囲み/矢印/線/手書き/テキスト、色、選択/削除、UNDO/REDO（配列）。座標は0〜1正規化（実表示boxをResizeObserverで測り均一px空間で描画＝歪まない）。注記は report JSON の一部＝版に同梱・ロールバックで一緒に戻る。
+  - 書くのは report-app（RWトークン）。ワーカーは readonly 据置。**残＝ブラウザ/Drive E2E（人の通し）**。
 - ⬜ **ダイジェスト“生成”**（最終融合・IAP 解決）。
 
 ## 11. 決定ログ（要点）

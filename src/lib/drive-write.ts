@@ -138,3 +138,101 @@ export async function readTextFileByName(folderId: string, name: string): Promis
   if (!res.ok) throw new Error(`Drive files.get(media) ${res.status}: ${await res.text()}`);
   return res.text();
 }
+
+// --- 版管理（report-app が _ai/reports/<folder_id>/v*.json を append-only で書く・正本アーキ §5） ---
+
+/** ファイル/フォルダの親 id を返す（複数親は先頭・無ければ null）。 */
+export async function getParentId(fileId: string): Promise<string | null> {
+  const token = await getWriteToken();
+  const res = await fetch(
+    `${DRIVE_API}/files/${fileId}?fields=parents&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+  );
+  if (!res.ok) throw new Error(`Drive files.get(parents) ${res.status}: ${await res.text()}`);
+  const json = (await res.json()) as { parents?: string[] };
+  return json.parents?.[0] ?? null;
+}
+
+/**
+ * 写真サブフォルダ（folder_id）に対応する版ディレクトリを解決する。
+ * 配置＝**親案件フォルダ**の `_ai/reports/<folder_id>/`（_ai は digest と共用・案件単位）。
+ * 親が見えない場合は写真サブフォルダ自身を基点にフォールバック。
+ * @param create true=無ければ作る（保存時）／false=作らず無ければ null（一覧・ロールバック時）
+ */
+export async function resolveReportVersionsDir(
+  photoFolderId: string,
+  create: boolean
+): Promise<string | null> {
+  const parent = (await getParentId(photoFolderId)) ?? photoFolderId;
+  if (create) {
+    const ai = await ensureSubfolder(parent, AI_FOLDER_NAME);
+    const reports = await ensureSubfolder(ai, "reports");
+    return ensureSubfolder(reports, photoFolderId);
+  }
+  const ai = await findSubfolder(parent, AI_FOLDER_NAME);
+  if (!ai) return null;
+  const reports = await findSubfolder(ai, "reports");
+  if (!reports) return null;
+  return findSubfolder(reports, photoFolderId);
+}
+
+export type DriveFileEntry = { id: string; name: string; modifiedTime?: string };
+
+/** 版ディレクトリ内の全ファイル（id/name/modifiedTime）を返す（版判定は呼び出し側）。 */
+export async function listFolderFiles(folderId: string): Promise<DriveFileEntry[]> {
+  const token = await getWriteToken();
+  const q = `'${folderId.replace(/'/g, "\\'")}' in parents and trashed = false`;
+  const params = new URLSearchParams({
+    q,
+    fields: "files(id,name,modifiedTime)",
+    pageSize: "1000",
+    orderBy: "name",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true"
+  });
+  const res = await fetch(`${DRIVE_API}/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store"
+  });
+  if (!res.ok) throw new Error(`Drive files.list ${res.status}: ${await res.text()}`);
+  const json = (await res.json()) as { files?: DriveFileEntry[] };
+  return json.files ?? [];
+}
+
+/**
+ * テキストファイルを **新規作成のみ**（upsert しない＝既存を上書きしない）。fileId を返す。
+ * 版は append-only で不変にするため、保存は常に新ファイル名で create する。
+ */
+export async function createTextFile(
+  folderId: string,
+  name: string,
+  content: string,
+  mimeType = "application/json"
+): Promise<string> {
+  const token = await getWriteToken();
+  const boundary = "b" + Date.now();
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify({ name, parents: [folderId] }) +
+    `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n` +
+    content +
+    `\r\n--${boundary}--`;
+  const res = await fetch(`${UPLOAD_API}/files?uploadType=multipart&fields=id&supportsAllDrives=true`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body
+  });
+  if (!res.ok) throw new Error(`Drive ファイル作成 ${res.status}: ${await res.text()}`);
+  return ((await res.json()) as { id: string }).id;
+}
+
+/** fileId 指定でテキスト内容を読む。 */
+export async function readTextFileById(fileId: string): Promise<string> {
+  const token = await getWriteToken();
+  const res = await fetch(`${DRIVE_API}/files/${fileId}?alt=media&supportsAllDrives=true`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store"
+  });
+  if (!res.ok) throw new Error(`Drive files.get(media) ${res.status}: ${await res.text()}`);
+  return res.text();
+}

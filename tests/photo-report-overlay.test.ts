@@ -9,9 +9,9 @@ const view: PhotoReportView = {
   caseId: "C1",
   driveFolderId: "F1",
   photoItems: [
-    { fileId: "a", name: "a.jpg", mimeType: "image/jpeg" },
-    { fileId: "b", name: "b.jpg", mimeType: "image/jpeg" },
-    { fileId: "c", name: "c.jpg", mimeType: "image/jpeg" }
+    { fileId: "a", name: "a.jpg", mimeType: "image/jpeg", annotations: [] },
+    { fileId: "b", name: "b.jpg", mimeType: "image/jpeg", annotations: [] },
+    { fileId: "c", name: "c.jpg", mimeType: "image/jpeg", annotations: [] }
   ]
 };
 
@@ -36,6 +36,25 @@ describe("overlayReport", () => {
     expect(out.photoItems[1].heading).toBe("台所");
     // フォルダ画像のメタ（name/mime）は保持
     expect(out.photoItems[0].name).toBe("b.jpg");
+  });
+
+  it("annotations(赤丸など)を保存JSONから引き継ぐ", () => {
+    const stored: StoredReportJson = {
+      photoItems: [
+        {
+          fileId: "a",
+          annotations: [
+            { id: "x1", type: "circle", points: [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }], color: "#e11" }
+          ]
+        }
+      ]
+    };
+    const out = overlayReport(view, stored);
+    const a = out.photoItems.find((p) => p.fileId === "a");
+    expect(a?.annotations).toHaveLength(1);
+    expect(a?.annotations?.[0]).toMatchObject({ type: "circle", color: "#e11" });
+    // 上書きされない写真は空配列のまま
+    expect(out.photoItems.find((p) => p.fileId === "b")?.annotations).toEqual([]);
   });
 
   it("JSONにあるがフォルダに無いfileIdはスキップ", () => {

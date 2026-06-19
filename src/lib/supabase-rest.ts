@@ -35,3 +35,36 @@ export async function sbSelect<T = Record<string, unknown>>(
   }
   return (await res.json()) as T[];
 }
+
+/**
+ * PostgREST に upsert（衝突時マージ）。返り値は挿入/更新された行。
+ * @param table 例: `photo_reports`
+ * @param row 1行オブジェクト（PK を含めること）
+ * @param onConflict 衝突対象カラム（例: `folder_id`）。PK と同じなら省略可。
+ */
+export async function sbUpsert<T = Record<string, unknown>>(
+  table: string,
+  row: Record<string, unknown>,
+  onConflict?: string
+): Promise<T[]> {
+  if (!URL || !KEY) {
+    throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY が未設定です。");
+  }
+  const qs = onConflict ? `?on_conflict=${encodeURIComponent(onConflict)}` : "";
+  const res = await fetch(`${URL}/rest/v1/${table}${qs}`, {
+    method: "POST",
+    headers: {
+      apikey: KEY,
+      Authorization: `Bearer ${KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=representation"
+    },
+    body: JSON.stringify(row),
+    cache: "no-store"
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Supabase upsert ${res.status}: ${body}`);
+  }
+  return (await res.json()) as T[];
+}

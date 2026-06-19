@@ -40,6 +40,17 @@ function req(name) {
 }
 
 // --- report.json の検証スキーマ（src/schemas/photo-report.ts のミラー） ---
+// annotations（赤丸など重ね描き）は人が WEB で付ける後フェーズの項目。AI は出力しないが、
+// 版互換のためスキーマ上は予約し、欠落時は空配列に正規化する（既定 []）。
+const annotationSchema = z.object({
+  id: z.string().min(1).max(64),
+  type: z.enum(["circle", "rect", "arrow", "line", "freehand", "text", "stamp"]),
+  points: z.array(z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) })).max(4096).default([]),
+  color: z.string().max(32).optional(),
+  strokeWidth: z.number().min(0).max(64).optional(),
+  text: z.string().max(500).optional(),
+  asset: z.string().max(120).optional()
+});
 const reportJsonSchema = z.object({
   headerSummary: z.string().max(2000).optional(),
   photoItems: z
@@ -47,7 +58,8 @@ const reportJsonSchema = z.object({
       z.object({
         fileId: z.string().min(1),
         heading: z.string().max(80).optional(),
-        annotationNote: z.string().max(500).optional()
+        annotationNote: z.string().max(500).optional(),
+        annotations: z.array(annotationSchema).max(200).default([])
       })
     )
     .min(1)

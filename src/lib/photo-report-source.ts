@@ -10,6 +10,7 @@
  */
 import { driveListImages, type DriveImage } from "@/lib/drive";
 import { sbSelect, supabaseConfigured } from "@/lib/supabase-rest";
+import type { Annotation } from "@/schemas/photo-report";
 
 export type PhotoReportItemView = {
   fileId: string;
@@ -17,6 +18,7 @@ export type PhotoReportItemView = {
   mimeType: string;
   heading?: string;
   annotationNote?: string;
+  annotations: Annotation[];
 };
 
 export type PhotoReportView = {
@@ -40,7 +42,8 @@ export function imagesToView(
     photoItems: images.map((im) => ({
       fileId: im.fileId,
       name: im.name,
-      mimeType: im.mimeType
+      mimeType: im.mimeType,
+      annotations: []
     }))
   };
 }
@@ -48,7 +51,12 @@ export function imagesToView(
 /** Supabase `photo_reports` に保存された AI 生成 report JSON の形（必要分のみ）。 */
 export type StoredReportJson = {
   headerSummary?: string;
-  photoItems: Array<{ fileId: string; heading?: string; annotationNote?: string }>;
+  photoItems: Array<{
+    fileId: string;
+    heading?: string;
+    annotationNote?: string;
+    annotations?: Annotation[];
+  }>;
 };
 
 /**
@@ -72,7 +80,8 @@ export function overlayReport(
     ordered.push({
       ...base,
       heading: item.heading ?? base.heading,
-      annotationNote: item.annotationNote ?? base.annotationNote
+      annotationNote: item.annotationNote ?? base.annotationNote,
+      annotations: item.annotations ?? base.annotations
     });
     used.add(item.fileId);
   }
