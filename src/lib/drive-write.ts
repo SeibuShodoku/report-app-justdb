@@ -1,0 +1,140 @@
+/**
+ * Drive 書き込みクライアント（案件ダイジェスト「口」用）。
+ * - サーバー専用。**書き込みは RW トークン**（scope=drive full）を使う。
+ *   GOOGLE_DRIVE_RW_REFRESH_TOKEN があればそれ、無ければ GOOGLE_DRIVE_REFRESH_TOKEN
+ *   （Cloud Run では後者に RW 値を設定済み・read+write 兼用）。
+ * - AI 専用フォルダの作成・テキストファイルの upsert・読み取りを担う。
+ *
+ * 仕様: docs/architecture/slack-photo-report-architecture.md §4（口）
+ */
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const RW_TOKEN = process.env.GOOGLE_DRIVE_RW_REFRESH_TOKEN;
+const RO_TOKEN = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+const TOKEN_URI = "https://oauth2.googleapis.com/token";
+const DRIVE_API = "https://www.googleapis.com/drive/v3";
+const UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
+
+/** AI 専用フォルダ名（当面の仮名・env で変更可）。 */
+export const AI_FOLDER_NAME = process.env.AI_WORKSPACE_FOLDER_NAME ?? "_ai";
+
+export function driveWriteConfigured(): boolean {
+  return Boolean(CLIENT_ID && CLIENT_SECRET && (RW_TOKEN || RO_TOKEN));
+}
+
+let cachedToken: { value: string; expiresAt: number } | null = null;
+
+async function getWriteToken(): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedToken && cachedToken.expiresAt - 60 > now) return cachedToken.value;
+  const refresh = RW_TOKEN || RO_TOKEN;
+  if (!CLIENT_ID || !CLIENT_SECRET || !refresh) {
+    throw new Error("GOOGLE_CLIENT_ID/SECRET と (RW or) DRIVE_REFRESH_TOKEN が未設定です。");
+  }
+  const res = await fetch(TOKEN_URI, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      refresh_token: refresh,
+      grant_type: "refresh_token"
+    }),
+    cache: "no-store"
+  });
+  if (!res.ok) throw new Error(`Drive(write) token更新失敗 ${res.status}: ${await res.text()}`);
+  const json = (await res.json()) as { access_token: string; expires_in: number };
+  cachedToken = { value: json.access_token, expiresAt: now + json.expires_in };
+  return json.access_token;
+}
+
+/** フォルダ内で name に一致する非ゴミ箱ファイル/フォルダの id を返す（無ければ null）。 */
+async function findChildByName(
+  parentId: string,
+  name: string,
+  mimeType?: string
+): Promise<string | null> {
+  const token = await getWriteToken();
+  const safe = name.replace(/'/g, "\\'");
+  let q = `'${parentId.replace(/'/g, "\\'")}' in parents and name = '${safe}' and trashed = false`;
+  if (mimeType) q += ` and mimeType = '${mimeType}'`;
+  const params = new URLSearchParams({
+    q,
+    fields: "files(id)",
+    pageSize: "1",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true"
+  });
+  const res = await fetch(`${DRIVE_API}/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store"
+  });
+  if (!res.ok) throw new Error(`Drive files.list ${res.status}: ${await res.text()}`);
+  const json = (await res.json()) as { files?: Array<{ id: string }> };
+  return json.files?.[0]?.id ?? null;
+}
+
+/** 親フォルダ配下のサブフォルダを find-or-create して id を返す。 */
+export async function ensureSubfolder(parentId: string, name: string): Promise<string> {
+  const existing = await findChildByName(parentId, name, "application/vnd.google-apps.folder");
+  if (existing) return existing;
+  const token = await getWriteToken();
+  const res = await fetch(`${DRIVE_API}/files?fields=id&supportsAllDrives=true`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] })
+  });
+  if (!res.ok) throw new Error(`Drive folder作成 ${res.status}: ${await res.text()}`);
+  return ((await res.json()) as { id: string }).id;
+}
+
+/** 既存サブフォルダを探す（作らない）。無ければ null。 */
+export async function findSubfolder(parentId: string, name: string): Promise<string | null> {
+  return findChildByName(parentId, name, "application/vnd.google-apps.folder");
+}
+
+/** フォルダ内のテキストファイルを name で upsert（あれば内容更新・無ければ作成）。fileId を返す。 */
+export async function upsertTextFile(
+  folderId: string,
+  name: string,
+  content: string,
+  mimeType = "text/markdown"
+): Promise<string> {
+  const token = await getWriteToken();
+  const existing = await findChildByName(folderId, name);
+  if (existing) {
+    const res = await fetch(
+      `${UPLOAD_API}/files/${existing}?uploadType=media&supportsAllDrives=true`,
+      { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": mimeType }, body: content }
+    );
+    if (!res.ok) throw new Error(`Drive 内容更新 ${res.status}: ${await res.text()}`);
+    return existing;
+  }
+  const boundary = "b" + Date.now();
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify({ name, parents: [folderId] }) +
+    `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n` +
+    content +
+    `\r\n--${boundary}--`;
+  const res = await fetch(`${UPLOAD_API}/files?uploadType=multipart&fields=id&supportsAllDrives=true`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body
+  });
+  if (!res.ok) throw new Error(`Drive ファイル作成 ${res.status}: ${await res.text()}`);
+  return ((await res.json()) as { id: string }).id;
+}
+
+/** フォルダ内のテキストファイルを name で読む。無ければ null。 */
+export async function readTextFileByName(folderId: string, name: string): Promise<string | null> {
+  const token = await getWriteToken();
+  const id = await findChildByName(folderId, name);
+  if (!id) return null;
+  const res = await fetch(`${DRIVE_API}/files/${id}?alt=media&supportsAllDrives=true`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store"
+  });
+  if (!res.ok) throw new Error(`Drive files.get(media) ${res.status}: ${await res.text()}`);
+  return res.text();
+}
