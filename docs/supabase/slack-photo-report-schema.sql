@@ -1,5 +1,5 @@
 -- Slack写真報告書 用テーブル
--- 仕様: docs/spec/slack-photo-report.md / 実装計画 docs/spec/slack-photo-report-impl-plan.md §1c・§2
+-- 仕様(正本): docs/architecture/slack-photo-report-architecture.md / 実装計画 docs/spec/slack-photo-report-impl-plan.md
 -- report-app(サーバー) と VM 常駐ワーカーが PostgREST 経由で参照する。既存スキーマとは独立。
 -- 適用: Supabase の SQL エディタ等で実行。アクセスは service_role（サーバー専用）想定＝RLSは有効化し公開アクセスは塞ぐ。
 
@@ -19,7 +19,8 @@ create table if not exists photo_report_jobs (
 );
 create index if not exists idx_photo_report_jobs_status on photo_report_jobs (status, created_at);
 
--- 2) 生成物：AI が作った report JSON（写真ごとの見出し/注記/並び＋要約）。folder 単位で1件、再生成は上書き。
+-- 2) 生成物：report JSON（写真ごとの見出し/注記(annotations)/並び＋要約）。folder 単位で「現在版1件」のみ・再生成/編集で上書き。
+--    版履歴は Drive `_ai/reports/<folder_id>/v*.json`(append-only) に report-app が書く（正本アーキ §5）。ここは常に最新版。
 create table if not exists photo_reports (
   folder_id     text primary key,                -- Drive フォルダ＝報告書の単位
   case_id       text,

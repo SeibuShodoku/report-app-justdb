@@ -1,8 +1,8 @@
-# 写真報告書 自動生成（Slack 起点）実装計画書 v0.1
+# 写真報告書 自動生成（Slack 起点）実装計画書 v0.2
 
-最終更新：2026-06-18
-状態：**draft**
-対象仕様：`spec/slack-photo-report.md`（本書はその実装手順）
+最終更新：2026-06-19
+状態：**Phase 1/2 達成・Slackトリガー入口prod稼働。Phase 3後半（サブフォルダ/版管理/完了返信/注記）が残**
+対象仕様（正本）：`../architecture/slack-photo-report-architecture.md`（本書はその実装手順）
 
 ## 0. 方針
 
@@ -11,12 +11,12 @@
 - **契約は実装後に抽出**（D-PORTS）。本計画では仕様 §6/§7 をスタブとして両側を並行可能にする。
 - 各フェーズに**検証マイルストーン (M)** を置き、そこを通過してから次へ。
 
-### 着手前に潰す最小の決定（仕様 §10 のうち着手必須のもの）
-- report JSON 置き場：**まず Supabase**（本アプリが既に接続・実装が速い）。Drive 再編集 JSON への移行は後（migrate-on-touch）。
+### 確定済みの基盤決定（正本＝アーキ §5/§8/§11）
+- **現在版＝Supabase `photo_reports`（folder_id キー・1件のみ・上書き）**。**版履歴＝Drive `_ai/reports/<folder_id>/v*.json`（append-only）**を report-app が書く（ワーカーは readonly 据置）。
 - ジョブ置き場：**Supabase テーブル**（`photo_report_jobs`）。
-- Drive 資格情報：**社内ユーザーの OAuth refresh token**（dispatch-app 標準）。※外部 SA は不可（実証 2026-06-18・§1a 参照）。
-- トリガー：**メッセージショートカット**（スレッド ts を確実に取得）。
-- ↑は提案。確定後にこの節を更新する。
+- Drive 資格情報：**社内ユーザーの OAuth refresh token**（dispatch-app 標準）。report-app=`drive`full(RW)／ワーカー=`drive.readonly`。※外部 SA は不可（実証 2026-06-18・§1a 参照）。
+- トリガー：**トピックの「📸報告書」ボタン（block_actions）**。報告書の単位＝**写真サブフォルダ（`写真_YYYYMMDD`）**。
+- **PDF はシステム非責務**（人が任意で印刷）。赤丸注記は**JSON重ね描き**（写真不変・版管理同梱）。
 
 ---
 
@@ -100,42 +100,59 @@
 
 ---
 
-## フェーズ 3：GAS / Slack（`slack-mini-bolt` 資産）
+## フェーズ 3：GAS / Slack（`justdb-hub-gas`）
 
-経路：Slack → `seibot-proxy`（署名検証）→ GAS。3 秒 ACK 厳守。
+経路：Slack → `seibot-proxy`（署名検証）→ hub-gas。3 秒 ACK 厳守。実装＝`photo_report_actions.gs`（block_actions の pr_*）。
 
-- [ ] トリガー（メッセージショートカット）受信ハンドラ：即 ACK。
-- [ ] Drive フォルダ作成：`driveUtils.gs`。トピックの親フォルダ配下に命名規則で子フォルダ（要・命名規則確定）。
-- [ ] スレッド投稿：`slackClient.gs` で「📁<フォルダリンク> に写真を保存 → [報告書を作成] ボタン」。
-- [ ] ボタン（`block_actions`）ハンドラ：即 ACK →「作成中…」→ `photo_report_jobs` に投入（channel/thread_ts/folderId/caseId）。
-- [ ] 完了反映：ワーカー done を検知（GAS 側ポーリング or WEB からの通知）→ スレッドへ **WEB URL** を `chat.update`/新規投稿。
-- [ ] 設定はシート正本（`slack-mini-bolt` 流儀）。stg は DRY_RUN。
+### 3a. 入口（✅ prod 稼働 2026-06-19）
+- [x] トピックに「📸報告書」ボタン：`SlackMessageRouting.gs generateInquiryInitialBlocks`（正本）＋ `topic-digest/topicBlocks.gs`（regenerate複製・同期）。value=`{caseId, driveFolderUrl}`（GD URL は JUST.DB案件一覧 `field_1709884614` 由来）。
+- [x] block_actions 振り分け：`security_proxy.gs` → `handlePhotoReportAction_`（**テスター以外は即 return**・Script Property `PHOTO_REPORT_TESTERS`）。
+- [x] `pr_start`：スレッドに GD URL＋[⚙️設定][📝報告書作成]。`pr_create`：GD URL→folder_id→`photo_report_jobs` INSERT（409=既投入）。`pr_settings`：プレースホルダ。
+- [x] デプロイ：hub-gas=**prod 新バージョン**（block_actions の `/exec` 固定URL維持）。topic-digest=**clasp push のみ**（cron駆動・WebApp/デプロイ不要・README明記）。Script Properties 設定済（コード経由 `pr_setupProps` でGUI 50件制限を回避）。
 
-> **M3（フル E2E）**：Slack でトリガー → 写真を Drive へ → ボタン → スレッドに完成 WEB URL。現場が URL を開いて赤丸・PDF。
+### 3b. 写真サブフォルダ化（残）＝アーキ §4
+- [ ] `pr_start`：トップ案件フォルダ配下に **`写真_YYYYMMDD` を find-or-create**（`DriveApp.getFolderById(topId).getFoldersByName/createFolder`）→ 本文リンク・ボタン value の `driveFolderUrl` を**サブフォルダ**に。
+- [ ] **同日2回目以降の `pr_start`＝エフェメラル案内**（「写真はこのフォルダへ／編集は報告書URLで」・公開投稿を増やさない）。
+- [ ] `pr_create`：**done/error の既存ジョブは再投入（status=queued に戻す＝再生成）**、queued/processing はガード。
+
+### 3c. 完了返信（残）
+- [ ] done 検知（hub-gas cron で `photo_report_jobs` status=done をポーリング）→ スレッドへ「📝報告書を開く」**ボタン**を1本。
+- [ ] **報告書URLは期限付き launch token のため生URLを焼かない**。クリック時に**GASが有効URLを発行**（`REPORT_LINK_SECRET` をGASでHMAC生成 or report-app に発行エンドポイント）。この「GASがURL発行できる部品」は将来のトピック導線でも共用。
+
+> **M3（フル E2E）**：トピック「📸報告書」→ 写真をサブフォルダへ → 「📝報告書作成」→ スレッドに完成URL（ボタン）。現場が URL を開いて赤丸・微修正・版管理。
 
 ---
 
-## フェーズ 4：堅牢化・締め
+## フェーズ 4：版管理・注記（report-app 編集面）＝アーキ §5/§6
 
-- [ ] 冪等/再生成（再押下で最新写真で上書き）、部分失敗のリトライ。
+- [ ] **版スナップショット**：保存時に `_ai/reports/<folder_id>/v{連番}.json`（append-only・不変・自己記述）を Drive へ書く（`drive-write` 流用）＋ `photo_reports` を差替。
+- [ ] **ロールバック UI**：版一覧（`files.list`）→ 選んだ旧版の内容で新版を追記＋現在版差替（ロールバックも1版＝監査）。
+- [ ] **スキーマ予約**：`src/schemas/photo-report.ts` の各写真に `annotations: []` を追加（UI 前でも版互換のため先行）。
+- [ ] **注記 UI**：写真上の透明 SVG レイヤー＋Pointer Events（マウス/指/ペン）。図形=正規化座標で JSON 保持。選択/削除・色・UNDO/REDO（配列操作）。印刷でも崩れない。
+
+## フェーズ 5：堅牢化・締め
+
+- [ ] 部分失敗のリトライ、attempts 上限。
 - [ ] 画像前処理（リサイズ/圧縮）の置き場確定（プロキシ or ワーカー）。
 - [ ] 監査ログ（作成者・日時・案件ID・folderId）＝`requirements.md` §6。
-- [ ] 完成 UX（進捗表示・PDF リンク）。
+- [ ] 完成 UX（進捗表示・最新版へのリンク）。
+- [ ] ワーカーの自動再起動（現状 tmux 手動・systemd/respawn 化）。
 - [ ] （任意）JUST.DB 限定書き戻し（金額/回数/薬剤/要約）。`open-issues.md` §0 の 5000/日 予算が解けてから。
-- [ ] **契約抽出**：稼働中の画像プロキシ＋report JSON 取り込みから `*_CONTRACT.md` を本アプリ `docs/` に抽出し、[`PORTS.md`](../../../PORTS.md) §4 に登録（D-PORTS）。
+- [ ] **契約抽出**：稼働中の画像プロキシ＋report JSON 取り込み＋`_ai/` 書込みから `*_CONTRACT.md` を本アプリ `docs/` に抽出し、[`PORTS.md`](../../../PORTS.md) §5 に登録（D-PORTS）。
 
 ---
 
 ## 依存・並行
-- 1 → 2（ワーカーはプロキシに依存）。
-- 3 は **ジョブ置き場スキーマ（1c）確定後**ならスタブジョブ相手に並行着手可。E2E は 1+2 完了後。
-- 1a（SA）は 1b の前提でクリティカルパス。最初に片付ける。
+- 1 → 2（ワーカーは画像取得＝当初プロキシ／確定後は Drive 直読みに依存）。
+- 3a（入口）は完了。3b/3c は hub-gas 内で完結し並行可。
+- 4（版管理/注記）は report-app 単体で進められ、3c（完了返信）と独立。
+- 1a（Drive 資格＝社内 OAuth）は全段の前提でクリティカルパス。※当初の外部 SA 案は実証の上で破棄（§1a）。
 
 ## 検証の通し方
 - M1：WEB 単体（AI/Slack 無し）。
 - M2：Slack 抜き E2E（手動ジョブ）。
 - M3：フル E2E。
-- 各 M で「写真が出る／JSON が valid／URL が開く／PDF が出る」を実データ 1 件で確認。
+- 各 M で「写真が出る／JSON が valid／URL が開く／（人が）印刷できる」を実データ 1 件で確認。
 
 ## リスク・要注意
 - **3 秒 ACK**（§5）：ボタン処理を同期で重くしない。必ず ACK→非同期。
@@ -144,7 +161,7 @@
 - **JUST.DB 予算**：本フローで JUST.DB を不用意に叩かない（Drive+Supabase+AI で完結させる）。
 
 ## 関連
-- 仕様：`spec/slack-photo-report.md`
-- 既存：`spec/requirements.md` / `architecture/overview.md` / `architecture/justdb-supabase-integration.md`
+- 仕様（正本）：`../architecture/slack-photo-report-architecture.md`（簡易版＝`slack-photo-report-simple.md`）
+- 既存：`spec/requirements.md` / `spec/report-formats.md` / `architecture/overview.md` / `architecture/justdb-supabase-integration.md`
 - 横断：[`decisions.md` D-AIDATA / D-PORTS](../../../decisions.md) / [`PORTS.md`](../../../PORTS.md)
 - 基盤：`GCP_VM_Claude_構築手順.md` / `slack-mini-bolt` / `seibot-proxy`

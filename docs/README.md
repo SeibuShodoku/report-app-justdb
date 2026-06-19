@@ -25,8 +25,8 @@
 
 ## 3. Runbook / デプロイ
 
-- `runbook/deploy-vercel.md`: ローカル開発／デプロイ手順
-- `deployment.md`: **デプロイ配置メモ**（Cloud Run / OAuth / SA / VM など資源の所在＝管理3面の地図）
+- `runbook/deploy-vercel.md`: **ローカル開発手順**（Vercelデプロイ節は superseded＝Cloud Run採用。本番デプロイは `deployment.md`）
+- `deployment.md`: **デプロイ配置メモ**（Cloud Run / IAP / OAuth / VM など資源の所在＝管理3面の地図）
 
 ## 4. 参照・資産
 
