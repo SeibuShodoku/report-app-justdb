@@ -2,7 +2,7 @@
 
 最終更新：2026-06-19
 管理3面の「地図（台帳）」用。report-app を構成する**Google/クラウド側の資源の所在**を一覧化する。
-（コードの構成は `architecture/repository-structure.md`、写真報告書の仕様は `spec/slack-photo-report.md`）
+（コードの構成は `architecture/repository-structure.md`、写真報告書の正本アーキは `architecture/slack-photo-report-architecture.md`）
 
 ## 所在一覧
 

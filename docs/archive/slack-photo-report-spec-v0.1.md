@@ -1,8 +1,8 @@
 # 写真報告書 自動生成（Slack 起点）仕様書 v0.1
 
-最終更新：2026-06-18
-状態：**draft**（初期仕様）
-> ⚠️ 実装が進み一部は更新済み。**現況の正本アーキは `../architecture/slack-photo-report-architecture.md`**（Cloud Run/IAP・ワーカーはDrive直読み・案件ダイジェスト統合）。本書は初期の設計意図として残す。
+最終更新：2026-06-18 ／ **archived: 2026-06-19**
+状態：**archived（初期仕様・superseded）**
+> ⚠️ これは初期の設計意図の記録（アーカイブ）。**現況の正本アーキは `../architecture/slack-photo-report-architecture.md`**（Cloud Run/IAP・ワーカーはDrive直読み・案件ダイジェスト統合）、実装計画は `../spec/slack-photo-report-impl-plan.md`。
 
 Slack に写真を集め、AI がスレッド文脈＋写真から**写真報告書の下書き（report JSON）**を作り、
 本アプリ（`report-app-justdb`）の WEB 報告書として**プリフィル済み**で開けるようにする自動化レイヤの仕様。

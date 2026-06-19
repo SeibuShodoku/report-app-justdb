@@ -1,7 +1,7 @@
 /**
  * 写真報告書 AI ワーカー（VM 常駐・フェーズ2 / 方式Y）。
  *
- * 流れ（仕様: docs/spec/slack-photo-report.md / 実装計画 §2）:
+ * 流れ（正本アーキ: docs/architecture/slack-photo-report-architecture.md / 実装計画: docs/spec/slack-photo-report-impl-plan.md §2）:
  *   1. Supabase `photo_report_jobs` の queued を1件 claim（processing 化）
  *   2. **Drive を直接読む**（mgmt-strat の OAuth refresh token・drive.readonly）。
  *      ＝案件フォルダ群は mgmt-strat 所有ツリー配下なので、他者所有の写真も継承で読める。
