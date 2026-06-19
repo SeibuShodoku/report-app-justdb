@@ -120,6 +120,7 @@ async function downloadPhoto(image, dir) {
 
 // --- 案件の文脈（フォルダ名＋同フォルダ/親フォルダの主要PDF） ---
 const MAX_CONTEXT_DOCS = Number(process.env.MAX_CONTEXT_DOCS ?? "5");
+const AI_FOLDER_NAME = process.env.AI_WORKSPACE_FOLDER_NAME ?? "_ai"; // 「口」(report-app)と同じAI専用フォルダ名
 // 文脈に有用なPDF（調査報告/見積/管理/点検/カルテ）を優先、請求書・地図は除外。
 const DOC_INCLUDE = /調査|報告|見積|管理|点検|カルテ|仕様|作業/;
 const DOC_EXCLUDE = /請求|navitime|map|route|invoice/i;
@@ -177,6 +178,40 @@ async function downloadDoc(file, dir, idx) {
   return file.name;
 }
 
+// --- 案件ダイジェスト(_ai/digest.md)の読み取り（readonlyでOK・「口」が書いたものを読む） ---
+async function getParentId(folderId) {
+  const m = await getFileMeta(folderId);
+  return m.parents?.[0] ?? null;
+}
+async function findSubfolderRO(parentId, name) {
+  const token = await getDriveToken();
+  const q = `'${parentId.replace(/'/g, "\\'")}' in parents and name = '${name.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const r = await fetch(`${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) return null;
+  return (await r.json()).files?.[0]?.id ?? null;
+}
+async function readTextByNameRO(folderId, name) {
+  const token = await getDriveToken();
+  const q = `'${folderId.replace(/'/g, "\\'")}' in parents and name = '${name.replace(/'/g, "\\'")}' and trashed = false`;
+  const r = await fetch(`${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: { Authorization: `Bearer ${token}` } });
+  const id = (await r.json()).files?.[0]?.id;
+  if (!id) return null;
+  const m = await fetch(`${DRIVE_API}/files/${id}?alt=media&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${token}` } });
+  return m.ok ? m.text() : null;
+}
+/** _ai/digest.md を folder_id → 親 の順に探す（案件フォルダ＝写真フォルダ or その親）。無ければ null。 */
+async function readCaseDigest(folderId) {
+  const candidates = [folderId, await getParentId(folderId)];
+  for (const fid of candidates) {
+    if (!fid) continue;
+    const ai = await findSubfolderRO(fid, AI_FOLDER_NAME);
+    if (!ai) continue;
+    const md = await readTextByNameRO(ai, "digest.md");
+    if (md && md.trim()) return md;
+  }
+  return null;
+}
+
 // --- Supabase REST ---
 async function sb(method, path, body, extraHeaders = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -222,10 +257,12 @@ async function upsertReport(folderId, caseId, reportJson) {
   );
 }
 
-function buildPrompt(ctx, docFileNames) {
-  const docLine = docFileNames.length
-    ? `このディレクトリには現場写真(画像)に加え、案件書類のPDF（${docFileNames.join(" / ")}）があります。**まず書類を読み、実際の作業内容（対象生物・対策の種類など）を正確に把握**してから写真を説明してください。`
-    : "案件書類は無いので、フォルダ名と写真から判断してください。";
+function buildPrompt(ctx, docFileNames, hasDigest) {
+  const docLine = hasDigest
+    ? "このディレクトリの **case-digest.md** に案件の時系列ダイジェスト（引き合い・調査・見積・経緯の要約）があります。**まずそれを読み、実際の作業内容（対象生物・対策の種類）を正確に把握**してから写真を説明してください。"
+    : docFileNames.length
+      ? `このディレクトリには現場写真(画像)に加え、案件書類のPDF（${docFileNames.join(" / ")}）があります。**まず書類を読み、実際の作業内容（対象生物・対策の種類など）を正確に把握**してから写真を説明してください。`
+      : "案件書類は無いので、フォルダ名と写真から判断してください。";
   return [
     "このディレクトリにある画像は、害虫防除（駆除）作業の現場写真です。これから写真報告書の下書きを作ります。",
     docLine,
@@ -235,7 +272,7 @@ function buildPrompt(ctx, docFileNames) {
     "全体の要約(headerSummary・3文程度)も作成。写真は意味の通る順に並べ替えてよい。",
     "出力は **このディレクトリに report.json を1つ書き出す**こと。形式は厳密に次のJSONのみ:",
     '{ "headerSummary": "…", "photoItems": [ { "fileId": "<画像ファイル名から拡張子を除いた部分>", "heading": "…", "annotationNote": "…" } ] }',
-    "fileId は各**画像**ファイル名の拡張子を除いた部分（例 1AbC.jpg → 1AbC）。context-*.pdf は文脈用で報告対象ではない。JSON以外の文章は report.json に書かないこと。"
+    "fileId は各**画像**ファイル名の拡張子を除いた部分（例 1AbC.jpg → 1AbC）。case-digest.md / context-*.pdf は文脈用で報告対象ではない。JSON以外の文章は report.json に書かないこと。"
   ].join("\n");
 }
 
@@ -269,18 +306,24 @@ async function processJob(job) {
 
     // 案件文脈（フォルダ名＋主要PDF）を集めて同梱
     const ctx = await gatherContext(job.folder_id);
+    // 案件ダイジェスト(_ai/digest.md)があればそれを文脈に（PDF選読は省略）。無ければ従来のPDF方式。
+    const digest = await readCaseDigest(job.folder_id);
     const docNames = [];
-    for (let i = 0; i < ctx.docs.length; i++) {
-      const name = await downloadDoc(ctx.docs[i], dir, i);
-      if (name) docNames.push(name);
+    if (digest) {
+      writeFileSync(join(dir, "case-digest.md"), digest);
+    } else {
+      for (let i = 0; i < ctx.docs.length; i++) {
+        const name = await downloadDoc(ctx.docs[i], dir, i);
+        if (name) docNames.push(name);
+      }
     }
 
-    await runClaude(dir, buildPrompt(ctx, docNames));
+    await runClaude(dir, buildPrompt(ctx, docNames, !!digest));
 
     const reportJson = reportJsonSchema.parse(JSON.parse(readFileSync(join(dir, "report.json"), "utf-8")));
     await upsertReport(job.folder_id, job.case_id, reportJson);
     await finishJob(job.id, { status: "done", error: null });
-    console.log(`[done] job=${job.id} folder=${job.folder_id} photos=${images.length} docs=${docNames.length} items=${reportJson.photoItems.length}`);
+    console.log(`[done] job=${job.id} folder=${job.folder_id} photos=${images.length} digest=${digest ? "yes" : "no"} docs=${docNames.length} items=${reportJson.photoItems.length}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await finishJob(job.id, { status: "error", error: message.slice(0, 1000) });
