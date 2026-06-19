@@ -109,8 +109,12 @@ export function PhotoReportEditor({
   const toggleVersions = useCallback(() => {
     const open = !versionsOpen;
     setVersionsOpen(open);
-    if (open && versions === null) void refreshVersions();
-  }, [versionsOpen, versions, refreshVersions]);
+    // 開くたびに取り直す（保存後に増えた版を反映する。一度空で取得したらキャッシュされる不具合の修正）。
+    if (open) {
+      setVersions(null);
+      void refreshVersions();
+    }
+  }, [versionsOpen, refreshVersions]);
 
   const save = useCallback(async () => {
     setSaving(true);
