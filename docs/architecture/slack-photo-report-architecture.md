@@ -104,7 +104,7 @@
 - ✅ **M2**（Slack抜きE2E：ジョブ→ワーカー→Drive直読み→Claude Code→report.json→保存）。文脈同梱で精度向上（クマネズミ案件を正しく特定）。
 - ✅ **Slackトリガー入口**：hub-gas に「📸報告書」ボタン＋block_actions ハンドラ（pr_start/pr_create/pr_settings）。**prod デプロイ済**・テスター(`U023GCWKLCS`)ガード。VMワーカー prod 運用中（tmux `photo-worker`・MAX_PHOTOS=30）。
 - ✅ **写真サブフォルダ化**（§4）＋ **同日エフェメラル** ＋ **done/error 再投入**（Phase3b・hub-gas `a07d64c`・テスターE2E検証済 2026-06-19）。
-- ⬜ **完了返信**：done 検知→スレッドへ最新報告書URLを1本（期限切れ回避のため**ボタン→クリック時URL発行**）。
+- ✅ **完了返信**（Phase3c・hub-gas `fd612b5`・prod検証済）：1分毎cron `pr_notifyDoneJobs` が done(未通知)を検知→スレッドへ[📝報告書を開く]→`pr_open` がクリック時に launch token URL を発行（生URLを焼かず期限切れ回避）。`photo_report_jobs.notified_at` で重複防止・再投入時null。
 - ⬜ **版管理（report-app）**：`_ai/reports/<id>/v*.json` 追記＋Supabase差替＋ロールバックUI。
 - ⬜ **annotations UI**（§6・スキーマ予約は先行）。
 - ⬜ **ダイジェスト“生成”**（最終融合・IAP 解決）。

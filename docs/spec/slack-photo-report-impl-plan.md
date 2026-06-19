@@ -1,7 +1,7 @@
 # 写真報告書 自動生成（Slack 起点）実装計画書 v0.2
 
 最終更新：2026-06-19
-状態：**Phase 1/2/3a/3b 達成（prod稼働・E2E検証済）。残= 3c 完了返信 / Phase4 版管理・注記**
+状態：**Phase 1/2/3a/3b/3c 達成（prod稼働・E2E検証済）。残= Phase4 版管理・注記**
 対象仕様（正本）：`../architecture/slack-photo-report-architecture.md`（本書はその実装手順）
 
 ## 0. 方針
@@ -116,9 +116,10 @@
 - [x] `pr_create`：**done/error の既存ジョブは再投入（`pr_reenqueueIfFinished_` が status=queued に戻す＝再生成）**、queued/processing はガード。
 - 実機検証: 新サブフォルダjob=4(5枚)生成→done / 2回目クリック=エフェメラル / 完了後の再クリック=再投入(attempts2)。
 
-### 3c. 完了返信（残）
-- [ ] done 検知（hub-gas cron で `photo_report_jobs` status=done をポーリング）→ スレッドへ「📝報告書を開く」**ボタン**を1本。
-- [ ] **報告書URLは期限付き launch token のため生URLを焼かない**。クリック時に**GASが有効URLを発行**（`REPORT_LINK_SECRET` をGASでHMAC生成 or report-app に発行エンドポイント）。この「GASがURL発行できる部品」は将来のトピック導線でも共用。
+### 3c. 完了返信（✅ prod 稼働・E2E検証 2026-06-19・hub-gas `fd612b5`）
+- [x] done 検知：`pr_notifyDoneJobs`（1分毎の時間主導トリガー・`pr_installNotifyTrigger` で設置）が `status=done & notified_at=null` を拾い、スレッドへ「📝報告書を開く」**ボタン**を投稿→`notified_at` セット（重複防止）。再投入時は `notified_at` を null に戻し再通知。
+- [x] URL発行：`pr_open` がクリック時に **GASで launch token を HMAC 生成**（`pr_makeReportUrl_`・`REPORT_LINK_SECRET` は Cloud Run と同値・既定24h）→ 本人にエフェメラルで渡す（**生URLを焼かず期限切れ回避**）。この部品は将来のトピック導線でも共用可。
+- 前提: migration `add_notified_at_to_photo_report_jobs`（§4 参照）／hub-gas Script Property `REPORT_LINK_SECRET`。
 
 > **M3（フル E2E）**：トピック「📸報告書」→ 写真をサブフォルダへ → 「📝報告書作成」→ スレッドに完成URL（ボタン）。現場が URL を開いて赤丸・微修正・版管理。
 
