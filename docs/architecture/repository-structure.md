@@ -26,7 +26,7 @@
 │  │  └─ security/launch-token.ts  起動トークン検証
 │  └─ schemas/report.ts        Zod スキーマ（launch context / 旧submission）
 ├─ tests/                      schema / token / api-route のテスト
-└─ docs/supabase/schema-and-seed.sql  Supabaseスキーマ＋シード
+└─ docs/supabase/             スキーマ(report-app/slack-photo-report)・migrations・seed（README参照）
 ```
 
 ## 方針

@@ -1,9 +1,11 @@
 -- =============================================================
--- 防除作業報告書アプリ / Supabase スキーマ + シード
+-- 防除作業報告書アプリ / Supabase スキーマ（report-app 本体）
 -- 役割: JUST.DB の薬剤資材テーブル（正本）のミラー + ケースデータ
--- 適用: Supabase ダッシュボード → SQL Editor に貼り付けて実行
+-- 適用: Supabase ダッシュボード → SQL Editor に貼り付けて実行（冪等・再実行可）
 -- 備考: 読み取りはすべて Next の API ルートからサービスロールキーで行うため
 --       RLS ポリシーは不要（サービスロールは RLS をバイパス）。
+-- 関連: シード（開発/デモ）= seed.sql ／ Slack写真報告のテーブル = slack-photo-report-schema.sql
+--       スキーマ確定“以降”の差分 = migrations/
 -- =============================================================
 
 -- 害虫マスタ（カスケード1段目）
@@ -35,25 +37,3 @@ create table if not exists construction_schedules (
   scheduled_at    timestamptz,        -- 施工日時
   report_date     date                -- 報告日
 );
-
--- ------------------------- シード -------------------------
-insert into pests (name) values ('ネズミ'), ('ゴキブリ')
-  on conflict (name) do nothing;
-
-insert into chemicals (justdb_id, name, unit, applicable_pests, methods) values
-  ('CHM-001', 'クマリン系粉剤',   'g', '{ネズミ}',        '{交換,配置}'),
-  ('CHM-002', 'ヒドラメチルノン', 'g', '{ゴキブリ}',      '{配置}'),
-  ('CHM-003', 'フィプロニル',     'g', '{ゴキブリ}',      '{配置,塗布}'),
-  ('CHM-004', 'リン化亜鉛',       'g', '{ネズミ}',        '{配置}')
-  on conflict (justdb_id) do update
-    set name = excluded.name,
-        unit = excluded.unit,
-        applicable_pests = excluded.applicable_pests,
-        methods = excluded.methods,
-        synced_at = now();
-
-insert into construction_schedules
-  (construction_id, case_id, order_id, customer_name, site, scheduled_at, report_date) values
-  ('CONST001', 'CASE001', 'ORD001', '心行寺', '江東区南砂', '2026-03-01T09:00:00+09:00', '2026-03-01'),
-  ('CONST002', 'CASE002', 'ORD002', '南砂町ビル管理組合', '江東区南砂2-1', '2026-03-05T13:30:00+09:00', '2026-03-05')
-  on conflict (construction_id) do nothing;

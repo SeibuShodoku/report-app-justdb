@@ -31,8 +31,8 @@
 ## 4. 参照・資産
 
 - `reference/防除作業報告書-原本-2006.xlsx`: 紺谷Vの原本Excel
-- `supabase/schema-and-seed.sql`: Supabaseスキーマ＋シード
-- `supabase/slack-photo-report-schema.sql`: 写真報告書のジョブ台帳/生成物（photo_report_jobs / photo_reports）
+- `supabase/`: スキーマ／マイグレーション／シード（[`supabase/README.md`](supabase/README.md) に配置と適用順）
+  - `report-app-schema.sql`（本体DDL）/ `slack-photo-report-schema.sql`（写真報告: photo_report_jobs / photo_reports）/ `migrations/`（差分）/ `seed.sql`（開発データ）
 
 ## 5. アーカイブ
 

@@ -17,7 +17,7 @@ npm run dev                  # http://localhost:3000/mock
 - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`（サーバー専用・クライアントに出さない）
 - `REPORT_LINK_SECRET`（将来のトークン検証用）
 
-Supabaseの初期化（プロジェクト作成→`docs/supabase/schema-and-seed.sql` 実行→疎通確認）は
+Supabaseの初期化（プロジェクト作成→`docs/supabase/`（README の適用順）実行→疎通確認）は
 `docs/architecture/justdb-supabase-integration.md` の「セットアップ」を参照。
 
 ## 2. Vercelデプロイ
