@@ -30,4 +30,4 @@
 ## 注意・将来
 - `seibu-dispatch-poc-tky` は「dispatch + visit-planner + report-app」を抱える**共有プロジェクト**。同居の理由＝OAuthクライアント流用／請求枠上限で新規PJ不可／visit-planner と同構成。
 - 厳密な分離が要るなら **report-app 専用プロジェクト**（自前OAuth・Cloud Run・SA・請求）が end-state（請求枠が空いたら寄せる）。
-- デプロイ手順は `runbook/deploy-vercel.md`（Cloud Run へ更新予定）。Dockerfile は repo ルート。
+- デプロイ手順は `runbook/deploy.md`（Cloud Run／ワーカー systemd／migration）。Dockerfile は repo ルート。

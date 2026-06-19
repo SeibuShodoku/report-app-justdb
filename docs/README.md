@@ -2,10 +2,10 @@
 
 西武消毒の防除作業報告書アプリの仕様・設計の入口。
 
-## 現在地（2026-06）
+## 現在地（2026-06-19）
 
-紺谷V／写真報告書／融合をタブ切替で出すモック（`/mock`）が稼働。Supabaseに繋ぎ、
-害虫→薬剤→処理方法のカスケードと施工予定IDによるケース取得をライブ確認済み（プレゼン可）。
+- **Slack写真→AI写真報告書システム**（本丸）：Slack「📸報告書」→AI下書き→WEBで仕上げ（赤丸・版管理・版名・削除）まで **Cloud Run＋IAP で prod 稼働**。**設定モーダル＋AIトーン＋PDF体裁**（齋藤マンション様 PDF 準拠）実装済。VM ワーカー（systemd 常駐）。正本＝`architecture/slack-photo-report-architecture.md`。
+- 紺谷V／写真報告書／融合のモック（`/mock`）：Supabase 接続・カスケード・ケース取得をライブ確認済（プレゼン可）。
 
 ## 1. 仕様（spec）
 
@@ -25,8 +25,12 @@
 
 ## 3. Runbook / デプロイ
 
-- `runbook/deploy-vercel.md`: **ローカル開発手順**（Vercelデプロイ節は superseded＝Cloud Run採用。本番デプロイは `deployment.md`）
+- `runbook/deploy.md`: **手順**（ローカル開発＋Cloud Run 本番＋ワーカー systemd＋migration）
 - `deployment.md`: **デプロイ配置メモ**（Cloud Run / IAP / OAuth / VM など資源の所在＝管理3面の地図）
+
+## 3.5 契約（contracts）
+
+- `contracts/PHOTO_REPORT_API_CONTRACT.md`: 写真報告 HTTP 面（画像プロキシ＋report JSON＋版管理／設定／生成）の正本契約（D-PORTS・中央 `PORTS.md §5` に登録）
 
 ## 4. 参照・資産
 

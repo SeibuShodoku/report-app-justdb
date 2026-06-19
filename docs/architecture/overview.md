@@ -68,9 +68,9 @@ JUST.DB（正本／5000回/日）
 
 ## 7. 実行基盤
 
-- 候補はVercel（無料枠基準）。モックはローカル＋Supabaseで稼働。
-- 注意: ローカルFS保存はVercelでは永続しない。永続はDrive（＋Supabase）が担う。
-- デプロイ手順は `docs/runbook/deploy-vercel.md`。
+- **本番＝Cloud Run＋IAP**（@seibu-s.co.jp 限定 SSO・2026-06-19 確定）。Vercel Hobby は非商用不可で却下。モックはローカル＋Supabase。
+- 注意: ローカルFS保存は本番非永続。永続は Drive（＋Supabase）が担う。
+- デプロイ手順＝`docs/runbook/deploy.md`／資源の所在＝`docs/deployment.md`。
 
 ## 8. 段階（フェーズ）
 

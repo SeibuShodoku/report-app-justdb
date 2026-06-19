@@ -8,7 +8,7 @@
  *   ドメイン内ユーザーとして読む（フォルダはドメイン共有なので社内ユーザーなら可）。
  * - 用途は読み取りのみ（一覧 files.list / メタ files.get / 実体 alt=media）。
  *
- * 仕様: report-app-justdb/docs/spec/slack-photo-report.md §7（画像プロキシ）
+ * 仕様: docs/architecture/slack-photo-report-architecture.md §8 / 契約 docs/contracts/PHOTO_REPORT_API_CONTRACT.md（画像プロキシ）
  */
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;

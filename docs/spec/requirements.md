@@ -37,8 +37,8 @@
 - 薬剤資材はSupabaseにミラーし、害虫→薬剤→処理方法をカスケードで絞り込む
 - **JUST.DBへ限定フィールドを書き戻す**（旧「書き戻さない」から方針転換）
 - 保存方式の既定は方式B（帳票割当写真のみ）。`driveFolderUrl` を正規入力
-- 当面トークンなし運用
-- 実行基盤はVercelを候補（モックはローカル＋Supabase）
+- 当面トークンなし運用（Slack写真報告フローは起動トークン必須）
+- **実行基盤＝Cloud Run＋IAP（2026-06-19 確定）**。Vercel Hobby は非商用不可で却下。手順＝`runbook/deploy.md`・資源＝`deployment.md`
 
 ## 5. 成果物定義
 
@@ -56,4 +56,4 @@
 
 - 様式: `spec/report-formats.md` ／ 未確定: `spec/open-issues.md`
 - 全体像: `architecture/overview.md` ／ 連携: `architecture/justdb-supabase-integration.md`
-- 構成: `architecture/repository-structure.md` ／ デプロイ: `runbook/deploy-vercel.md`
+- 構成: `architecture/repository-structure.md` ／ デプロイ: `runbook/deploy.md`

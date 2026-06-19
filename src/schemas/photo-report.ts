@@ -8,7 +8,7 @@ import { z } from "zod";
  *   絶対URL縛りを避けつつ、参照を安定させるため。
  * - 写真枚数の上限を大きく取る（Drive 直投入で 10 枚の壁が無いため）。
  *
- * 仕様: report-app-justdb/docs/spec/slack-photo-report.md §6
+ * 仕様: docs/architecture/slack-photo-report-architecture.md §5/§6（正本）
  */
 
 /**

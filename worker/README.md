@@ -3,7 +3,7 @@
 VM 常駐で動かす。queued ジョブを拾い、**Drive を直接読み**（mgmt-strat の OAuth・drive.readonly）、
 **VM の Claude Code をヘッドレス起動**して `report.json` を書かせ、検証して Supabase `photo_reports` に保存する。
 
-- 仕様/計画: `../docs/spec/slack-photo-report.md` / `../docs/spec/slack-photo-report-impl-plan.md` §2
+- 仕様/計画: `../docs/architecture/slack-photo-report-architecture.md`（正本）/ `../docs/spec/slack-photo-report-impl-plan.md` §2・§6
 - スキーマDDL（先に適用）: `../docs/supabase/slack-photo-report-schema.sql`
 - **方式Y**：Cloud Run 直結IAP がヘッドレス用 audience を露出しないため、worker は IAP 越しプロキシではなく Drive 直読み。
   案件フォルダは mgmt-strat 所有ツリー配下なので、他者所有の写真も継承で読める（DWD不要）。
