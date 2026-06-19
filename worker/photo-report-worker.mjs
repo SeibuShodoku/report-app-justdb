@@ -29,6 +29,7 @@ const REFRESH_TOKEN = req("GOOGLE_DRIVE_REFRESH_TOKEN");
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "claude";
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? "15000");
 const MAX_PHOTOS = Number(process.env.MAX_PHOTOS ?? "60"); // 1回の生成に渡す写真上限（サブスク消費の暴発防止）
+const MAX_ATTEMPTS = Number(process.env.MAX_ATTEMPTS ?? "8"); // 試行上限。到達ジョブは Claude を回さず error 確定（暴走防止）
 const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS ?? "300000");
 const TOKEN_URI = "https://oauth2.googleapis.com/token";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
@@ -322,6 +323,16 @@ function extractJson(text) {
 }
 
 async function processJob(job) {
+  // 試行上限ガード：claim 時に attempts は加算済み。上限超過は Claude を回さず error 確定
+  // （恒久的に失敗するジョブが再投入で延々とサブスクを焼くのを防ぐ）。
+  if ((job.attempts ?? 0) > MAX_ATTEMPTS) {
+    await finishJob(job.id, {
+      status: "error",
+      error: `再試行上限(${MAX_ATTEMPTS}回)に到達しました。写真と案件書類を確認してください。`
+    });
+    console.warn(`[skip] job=${job.id} attempts=${job.attempts} > MAX_ATTEMPTS=${MAX_ATTEMPTS}`);
+    return;
+  }
   const dir = mkdtempSync(join(tmpdir(), `pr-${job.id}-`));
   try {
     const images = (await listImages(job.folder_id)).slice(0, MAX_PHOTOS);

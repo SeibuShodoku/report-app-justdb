@@ -1,0 +1,21 @@
+[Unit]
+# 写真報告書 AI ワーカー（VM 常駐・方式Y）。tmux 手動常駐に替わる自動再起動の正本。
+# 設置先（VM）: /etc/systemd/system/photo-report-worker.service
+# run.sh が worker.env(秘密)＋チューニング env を読み、`exec node` で前景起動する＝node が MainPID。
+Description=Photo report AI worker (Slack写真→AI写真報告書 / 方式Y)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mgmt_strat_seibu_s_co_jp
+WorkingDirectory=/mnt/claude-data/projects/photo-report-worker
+ExecStart=/mnt/claude-data/projects/photo-report-worker/run.sh
+Restart=always
+RestartSec=10
+# 既存の運用ログに追記（journald にも unit の起動/停止は残る）。
+StandardOutput=append:/mnt/claude-data/projects/photo-report-worker/worker.log
+StandardError=append:/mnt/claude-data/projects/photo-report-worker/worker.log
+
+[Install]
+WantedBy=multi-user.target

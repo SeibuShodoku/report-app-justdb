@@ -21,15 +21,30 @@ GOOGLE_DRIVE_REFRESH_TOKEN=...          # mgmt-strat・drive.readonly
 CLAUDE_BIN=claude
 POLL_INTERVAL_MS=15000
 MAX_PHOTOS=60
+MAX_CONTEXT_DOCS=5
 CLAUDE_TIMEOUT_MS=300000
+MAX_ATTEMPTS=8        # 試行上限。到達ジョブは Claude を回さず error 確定（暴走防止）
 ```
 
-## 実行
+VM では秘密を `worker.env`（mode 600・KEY=value 形式）に置き、`run.sh` が `set -a; . ./worker.env` で読み込む。
+
+## 実行（VM・systemd 常駐＝正本）
+
+tmux 手動常駐はプロセス/VM 落ちで止まるため、**systemd で自動再起動**する（`photo-report-worker.service` がユニットの正本）。
 
 ```bash
-node worker/photo-report-worker.mjs        # ビルド不要・常駐
-# VM では tmux 内推奨（GCP_VM_Claude_構築手順.md §11）
+# 設置（VM・mgmt-strat で sudo 可）
+sudo cp /mnt/claude-data/projects/photo-report-worker/photo-report-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now photo-report-worker      # 起動＋次回ブートでも自動起動
+systemctl status photo-report-worker --no-pager      # active(running) を確認
+tail -f /mnt/claude-data/projects/photo-report-worker/worker.log
+
+# 更新時（worker コード差し替え後）
+sudo systemctl restart photo-report-worker
 ```
+
+> 単発デバッグだけなら `bash run.sh`（前景）でも可。常駐の正本は systemd。
 
 ## M2（Slack 抜き E2E）手順
 
