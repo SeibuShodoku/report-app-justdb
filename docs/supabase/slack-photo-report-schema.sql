@@ -14,9 +14,12 @@ create table if not exists photo_report_jobs (
   status        text not null default 'queued',  -- queued / processing / done / error
   error         text,                            -- 失敗時のメッセージ
   attempts      int  not null default 0,
+  notified_at   timestamptz,                     -- 完了返信(3c)済み時刻。done検知→スレ通知後にセット。再投入時はnullへ
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+-- 既存テーブルへの後追い適用（3c 完了返信）は migration を使う:
+--   migrations/20260619170500_add_notified_at_to_photo_report_jobs.sql
 create index if not exists idx_photo_report_jobs_status on photo_report_jobs (status, created_at);
 
 -- 2) 生成物：report JSON（写真ごとの見出し/注記(annotations)/並び＋要約）。folder 単位で「現在版1件」のみ・再生成/編集で上書き。
