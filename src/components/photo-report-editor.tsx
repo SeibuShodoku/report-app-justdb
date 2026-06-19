@@ -11,8 +11,18 @@
 import { useCallback, useState } from "react";
 import { PhotoAnnotator } from "@/components/photo-annotator";
 import { PrintButton } from "@/components/print-button";
+import { BRANCH, DISCLAIMER } from "@/lib/report-template";
 import type { PhotoReportView } from "@/lib/photo-report-source";
 import type { Annotation } from "@/schemas/photo-report";
+import {
+  CLIENT_TYPE_LABEL,
+  PROPOSAL_WEIGHT_LABEL,
+  REPORT_TITLE,
+  REPORT_TYPE_LABEL,
+  RESPONSE_MODE_LABEL,
+  TONE_POLITENESS_LABEL,
+  type PhotoReportSettings
+} from "@/schemas/photo-report-settings";
 
 type EditItem = {
   fileId: string;
@@ -57,19 +67,30 @@ function toEditItems(view: PhotoReportView): EditItem[] {
 
 export function PhotoReportEditor({
   initialView,
+  initialSettings,
   caseId,
   folderId,
   token,
   currentUserEmail
-}: Props & { initialView: PhotoReportView }) {
+}: Props & { initialView: PhotoReportView; initialSettings: PhotoReportSettings }) {
   const [items, setItems] = useState<EditItem[]>(() => toEditItems(initialView));
   const [headerSummary, setHeaderSummary] = useState(initialView.headerSummary ?? "");
+  const [workItemsText, setWorkItemsText] = useState((initialView.workItems ?? []).join("\n"));
   const [saveLabel, setSaveLabel] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [versions, setVersions] = useState<VersionEntry[] | null>(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [busyVersion, setBusyVersion] = useState<number | null>(null);
+  // 設定（モーダル）
+  const [settings, setSettings] = useState<PhotoReportSettings>(initialSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  const setField = useCallback(<K extends keyof PhotoReportSettings>(key: K, value: PhotoReportSettings[K]) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  }, []);
 
   const patchItem = useCallback((index: number, patch: Partial<EditItem>) => {
     setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
@@ -90,6 +111,10 @@ export function PhotoReportEditor({
       caseId,
       driveFolderId: folderId,
       headerSummary: headerSummary.trim() || undefined,
+      workItems: workItemsText
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
       photoItems: items.map((it) => ({
         fileId: it.fileId,
         heading: it.heading.trim() || undefined,
@@ -97,8 +122,55 @@ export function PhotoReportEditor({
         annotations: it.annotations
       }))
     }),
-    [caseId, folderId, headerSummary, items]
+    [caseId, folderId, headerSummary, workItemsText, items]
   );
+
+  const saveSettings = useCallback(async () => {
+    setSettingsSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/photo-report/settings?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ settings })
+        }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? `設定の保存に失敗（${res.status}）`);
+      setSettingsOpen(false);
+      setMessage({ type: "success", text: "設定を保存しました。「AIで再作成」で反映できます。" });
+    } catch (e) {
+      setMessage({ type: "error", text: e instanceof Error ? e.message : "設定の保存に失敗しました。" });
+    } finally {
+      setSettingsSaving(false);
+    }
+  }, [folderId, token, settings]);
+
+  const generate = useCallback(async () => {
+    if (!window.confirm("現在の設定で AI に報告書を作り直させます（現在版は上書きされます）。よろしいですか？")) {
+      return;
+    }
+    setGenerating(true);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/photo-report/generate?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? `生成依頼に失敗（${res.status}）`);
+      setMessage({
+        type: "success",
+        text: "AI生成を依頼しました。1〜数分で完成します。少し待ってからページを再読み込みしてください。"
+      });
+    } catch (e) {
+      setMessage({ type: "error", text: e instanceof Error ? e.message : "生成依頼に失敗しました。" });
+    } finally {
+      setGenerating(false);
+    }
+  }, [folderId, token]);
 
   const refreshVersions = useCallback(async () => {
     try {
@@ -235,6 +307,16 @@ export function PhotoReportEditor({
     [folderId, token]
   );
 
+  // 印刷（PDF）用の派生値（設定メタ＋編集中の内容）。
+  const title = REPORT_TITLE[settings.reportType];
+  const kindLabel = settings.reportType === "survey" ? "調査" : "施工";
+  const propertyName = (settings.propertyName ?? "").trim();
+  const propertyLabel = propertyName ? (/様$/.test(propertyName) ? propertyName : `${propertyName} 様`) : "";
+  const execDate = (settings.execDate ?? "").trim();
+  const reporter = (settings.reporter ?? "").trim();
+  const workItemsList = workItemsText.split("\n").map((s) => s.trim()).filter(Boolean);
+  const coverItem = items[0];
+
   return (
     <section className="panel">
       <div className="inline-actions no-print">
@@ -250,20 +332,178 @@ export function PhotoReportEditor({
         <button type="button" onClick={save} disabled={saving || items.length === 0}>
           {saving ? "保存中…" : "保存（新しい版）"}
         </button>
+        <button type="button" onClick={() => setSettingsOpen(true)}>
+          ⚙️ 設定
+        </button>
+        <button type="button" onClick={generate} disabled={generating}>
+          {generating ? "依頼中…" : "AIで再作成"}
+        </button>
         <button type="button" onClick={toggleVersions}>
           {versionsOpen ? "版を閉じる" : "版を表示"}
         </button>
         <PrintButton />
       </div>
 
-      <p>案件ID: {caseId}</p>
-      <p>写真 {items.length} 枚</p>
+      {settingsOpen ? (
+        <div className="modal-backdrop no-print" onClick={() => setSettingsOpen(false)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="inline-actions">
+              <h2>報告書の設定</h2>
+            </div>
+            <p className="notice">種類・実施日・物件名・担当者と、AI 文章のトーンを設定します。「AIで再作成」で反映されます。</p>
+
+            <div className="editor-field">
+              <label htmlFor="set-type">報告書の種類</label>
+              <select
+                id="set-type"
+                value={settings.reportType}
+                onChange={(e) => setField("reportType", e.target.value as PhotoReportSettings["reportType"])}
+              >
+                {Object.entries(REPORT_TYPE_LABEL).map(([v, label]) => (
+                  <option key={v} value={v}>{label}（{REPORT_TITLE[v as PhotoReportSettings["reportType"]]}）</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="editor-field">
+              <label htmlFor="set-date">実施日（手入力）</label>
+              <input
+                id="set-date"
+                type="text"
+                value={settings.execDate ?? ""}
+                maxLength={40}
+                placeholder="例: 2026年6月19日"
+                onChange={(e) => setField("execDate", e.target.value)}
+              />
+            </div>
+
+            <div className="editor-field">
+              <label htmlFor="set-property">物件名（施工現場）</label>
+              <input
+                id="set-property"
+                type="text"
+                value={settings.propertyName ?? ""}
+                maxLength={120}
+                placeholder="例: 齋藤マンション様"
+                onChange={(e) => setField("propertyName", e.target.value)}
+              />
+            </div>
+
+            <div className="editor-field">
+              <label htmlFor="set-reporter">担当者</label>
+              <input
+                id="set-reporter"
+                type="text"
+                value={settings.reporter ?? ""}
+                maxLength={80}
+                placeholder="例: 紺谷直人"
+                onChange={(e) => setField("reporter", e.target.value)}
+              />
+            </div>
+
+            <div className="editor-field">
+              <label htmlFor="set-tone">文体</label>
+              <select
+                id="set-tone"
+                value={settings.tonePoliteness}
+                onChange={(e) => setField("tonePoliteness", e.target.value as PhotoReportSettings["tonePoliteness"])}
+              >
+                {Object.entries(TONE_POLITENESS_LABEL).map(([v, label]) => (
+                  <option key={v} value={v}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="editor-field">
+              <label htmlFor="set-response">対応の性質</label>
+              <select
+                id="set-response"
+                value={settings.responseMode}
+                onChange={(e) => setField("responseMode", e.target.value as PhotoReportSettings["responseMode"])}
+              >
+                {Object.entries(RESPONSE_MODE_LABEL).map(([v, label]) => (
+                  <option key={v} value={v}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="editor-field">
+              <label htmlFor="set-proposal">提案の重さ</label>
+              <select
+                id="set-proposal"
+                value={settings.proposalWeight}
+                onChange={(e) => setField("proposalWeight", e.target.value as PhotoReportSettings["proposalWeight"])}
+              >
+                {Object.entries(PROPOSAL_WEIGHT_LABEL).map(([v, label]) => (
+                  <option key={v} value={v}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="editor-field">
+              <label htmlFor="set-client">相手</label>
+              <select
+                id="set-client"
+                value={settings.clientType}
+                onChange={(e) => setField("clientType", e.target.value as PhotoReportSettings["clientType"])}
+              >
+                {Object.entries(CLIENT_TYPE_LABEL).map(([v, label]) => (
+                  <option key={v} value={v}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="inline-actions">
+              <button type="button" onClick={saveSettings} disabled={settingsSaving}>
+                {settingsSaving ? "保存中…" : "設定を保存"}
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setSettingsOpen(false)}>
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <p className="no-print">案件ID: {caseId}</p>
+      <p className="no-print">写真 {items.length} 枚</p>
 
       {message ? (
-        <p className={`notice ${message.type}`} role="status">
+        <p className={`notice ${message.type} no-print`} role="status">
           {message.text}
         </p>
       ) : null}
+
+      {/* ===== 印刷(PDF) 表紙 ===== */}
+      <div className="print-only print-cover">
+        <h1 className="cover-title">{title}</h1>
+        {coverItem ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="cover-photo" src={photoUrl(coverItem.fileId, folderId, token)} alt="表紙写真" />
+        ) : null}
+        <table className="cover-table">
+          <tbody>
+            <tr>
+              <th>{kindLabel}実施日</th>
+              <td>{execDate || "　"}</td>
+            </tr>
+            <tr>
+              <th>{kindLabel}現場</th>
+              <td>{propertyLabel || "　"}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div className="cover-company">
+          <div className="cover-company-name">{BRANCH.company}</div>
+          <div>
+            {BRANCH.company} {BRANCH.branch}
+          </div>
+          <div>{BRANCH.postal}</div>
+          <div>{BRANCH.tel}</div>
+          {reporter ? <div>担当者: {reporter}</div> : null}
+          <div>{BRANCH.url}</div>
+        </div>
+      </div>
 
       {versionsOpen ? (
         <div className="section-block no-print">
@@ -327,8 +567,8 @@ export function PhotoReportEditor({
         </div>
       ) : null}
 
-      <div className="editor-field">
-        <label htmlFor="headerSummary">全体要約</label>
+      <div className="editor-field no-print">
+        <label htmlFor="headerSummary">{kindLabel}概要（まとめ文章）</label>
         <textarea
           id="headerSummary"
           value={headerSummary}
@@ -338,12 +578,26 @@ export function PhotoReportEditor({
         />
       </div>
 
+      <div className="editor-field no-print">
+        <label htmlFor="workItems">{kindLabel}内容（1行に1項目）</label>
+        <textarea
+          id="workItems"
+          value={workItemsText}
+          maxLength={3000}
+          placeholder={"例:\n101号室、102号室及び103号室の床下に木部剤及び土壌剤を散布処理\n101号室、102号室及び103号室の風呂場の壁面を穿孔し薬剤を注入処理"}
+          onChange={(e) => setWorkItemsText(e.target.value)}
+        />
+      </div>
+
       {items.length === 0 ? (
         <p className="notice">このフォルダに写真がありません。</p>
       ) : (
         <div className="photo-grid">
           {items.map((item, index) => (
             <figure key={item.fileId} className="photo-card">
+              <div className="print-only print-caption">
+                {index + 1}．{item.heading || `写真 ${index + 1}`}
+              </div>
               <PhotoAnnotator
                 src={photoUrl(item.fileId, folderId, token)}
                 alt={item.heading || item.name}
@@ -362,7 +616,7 @@ export function PhotoReportEditor({
                   ↓ 後へ
                 </button>
               </div>
-              <figcaption className="editor-field">
+              <figcaption className="editor-field no-print">
                 <label htmlFor={`h-${item.fileId}`}>見出し（写真 {index + 1}）</label>
                 <input
                   id={`h-${item.fileId}`}
@@ -388,6 +642,39 @@ export function PhotoReportEditor({
           ))}
         </div>
       )}
+
+      {/* ===== 印刷(PDF) 最終ページ：概要／内容／免責 ===== */}
+      <div className="print-only print-summary">
+        <div className="summary-head">
+          <span className="summary-property">{propertyLabel}</span>
+          <span className="summary-date">実施日　{execDate}</span>
+        </div>
+        <section className="summary-box">
+          <h3>{kindLabel}概要</h3>
+          <p className="summary-text">{headerSummary || "　"}</p>
+        </section>
+        <section className="summary-box">
+          <h3>{kindLabel}内容</h3>
+          {workItemsList.length > 0 ? (
+            <ol className="summary-items">
+              {workItemsList.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ol>
+          ) : (
+            <p className="summary-text">　</p>
+          )}
+        </section>
+        <section className="summary-box">
+          <h3>免責事項</h3>
+          <div className="summary-disclaimer">
+            {DISCLAIMER.map((line, i) => (
+              <p key={i}>{line}</p>
+            ))}
+          </div>
+        </section>
+        <div className="summary-end">以上</div>
+      </div>
     </section>
   );
 }

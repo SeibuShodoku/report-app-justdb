@@ -1,7 +1,7 @@
 # 写真報告書 自動生成（Slack 起点）実装計画書 v0.2
 
 最終更新：2026-06-19
-状態：**Phase 1/2/3a/3b/3c 達成（prod稼働・E2E検証済）。Phase4 版管理・注記＝実装/静的検証済（ブラウザ/Drive E2E待ち）。残= Phase5 締め**
+状態：**Phase 1/2/3 prod稼働。Phase4 版管理・注記＋版名/削除/本人制限＝ブラウザE2E済。Phase5 堅牢化（systemd・attempts上限・監査・D-PORTS契約）＝完了。Phase6 設定モーダル＋PDF体裁＝実装/静的検証済（要 migration 適用＋通し）。残＝要約生成(IAP)・JUST.DB本接続(予算)**
 対象仕様（正本）：`../architecture/slack-photo-report-architecture.md`（本書はその実装手順）
 
 ## 0. 方針
@@ -137,6 +137,18 @@
 - [x] **注記 UI**：`src/components/photo-annotator.tsx`。写真上の透明 SVG＋Pointer Events（マウス/指/ペン）。赤丸/囲み/矢印/線/手書き/テキスト、色、選択/削除、UNDO/REDO（配列 push/pop）。座標=0〜1正規化（実表示boxを ResizeObserver で測り均一px空間で描画）。`PhotoReportEditor` に統合・保存に同梱。
 - [x] **編集面**：`src/components/photo-report-editor.tsx`（クライアント島）＝見出し/所見/全体要約/並び替え＋保存/版/印刷。`/report/photo` は server で auth＋ロード→島へ渡す。
 - [ ] **残＝E2E（人の通し）**：実フォルダで `/report/photo` を開き、編集→保存→Drive に v0001.json／Supabase 現在版差替→版一覧→ロールバック→赤丸描画→保存→印刷、を実データ1件で確認（要 Cloud Run デプロイ or ローカル creds）。
+
+## フェーズ 6：報告書設定・PDF体裁（✅実装/静的検証済 2026-06-19・要 migration＋通し）＝アーキ §6.5
+
+ゴール＝齋藤マンション様 PDF。設定で AI 文章のトーンと報告書メタを制御し、印刷を PDF 体裁に寄せる。
+
+- [x] **データ層**：`photo_report_settings`（folder_id・種類/実施日/物件名/担当者/トーン4種）migration＋RLS。report JSON に `workItems`（施工内容）追加（worker mirror 含む）。
+- [x] **API**：`/api/photo-report/settings`（GET/POST・browser auth）／`/api/photo-report/generate`（job 投入/再投入・browser auth）。
+- [x] **設定モーダル UI**：`/report/photo` の⚙️設定モーダル（種類/実施日/物件名/担当者/文体/対応/提案/相手）＋「AIで再作成」。`workItems`・概要も編集可。
+- [x] **worker プロンプト反映**：`getSettings`＋`settingsLines`で種類/文体/対応/提案/法人個人を指示。見出し≤20字・所見省略・`workItems`生成。
+- [x] **PDF 体裁（print CSS）**：表紙（種類タイトル/実施日/施工現場/会社フッター城東支店）→番号付き2列グリッド（見出しのみ）→最終ページ（概要/内容/免責＝`lib/report-template.ts`）。
+- [ ] **要 migration 適用**：`migrations/20260619210000_create_photo_report_settings.sql` を Supabase に。**通し**：設定保存→AIで再作成→PDF 体裁を実データで確認。
+- [ ] **残**：Slack「⚙️設定」のURL発行導線（hub-gas）・物件名の JUST.DB ライブ取得。
 
 ## フェーズ 5：堅牢化・締め
 

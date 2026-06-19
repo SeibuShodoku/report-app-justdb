@@ -102,6 +102,19 @@
 ```
 - **最新版は不可（409）／作成者本人のみ（403）**。
 
+### 2-9. `/api/photo-report/settings?folderId=&token=`（生成設定）
+```jsonc
+// GET 200 = { "settings": { reportType, execDate?, propertyName?, reporter?, tonePoliteness, responseMode, proposalWeight, clientType } }
+// POST body = { "settings": { ... } } → 200 { ok:true, settings }（ブラウザのみ・Supabase photo_report_settings に upsert）
+```
+- enum: reportType=construction|survey / tonePoliteness=desu_masu|plain / responseMode=normal|complaint / proposalWeight=strong|normal|light / clientType=corporate|individual。
+
+### 2-10. `POST /api/photo-report/generate?folderId=&token=`（AI 生成依頼・ブラウザのみ）
+```jsonc
+// body 不要 → 200 { ok:true, requeued:boolean }
+```
+- `photo_report_jobs` を folder_id で投入/再投入（既存は queued に戻す）。ワーカーが設定を読みプロンプト反映。
+
 ---
 
 ## 3. 不変条件（版管理・権限）

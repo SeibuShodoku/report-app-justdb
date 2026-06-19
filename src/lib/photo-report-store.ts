@@ -21,7 +21,7 @@ import {
   parseVersionNumber,
   type ReportVersionSource
 } from "@/lib/report-versions";
-import { sbUpsert } from "@/lib/supabase-rest";
+import { sbPatch, sbSelect, sbUpsert } from "@/lib/supabase-rest";
 import { photoReportDraftSchema, type PhotoReportDraft } from "@/schemas/photo-report";
 
 export type SavedVersion = { version: number; fileName: string; savedAt: string };
@@ -176,6 +176,37 @@ async function readVersionReport(
       ? (parsed as { report: unknown }).report
       : parsed;
   return photoReportDraftSchema.parse(raw);
+}
+
+/**
+ * WEB から AI 生成（再生成）を依頼する＝`photo_report_jobs` を投入/再投入。
+ * folder_id で既存ジョブを探し、あれば queued に戻す（done/error/processing 問わず＝最新写真＋最新設定で作り直し）、
+ * 無ければ新規 INSERT（dedupe_key=`web:<folder_id>`）。ワーカーが queued を拾って生成し、設定をプロンプトへ反映。
+ * Slack 起点ジョブとは folder_id で収束する（同フォルダ＝同報告書）。
+ */
+export async function requestGeneration(
+  folderId: string,
+  caseId: string
+): Promise<{ requeued: boolean }> {
+  const existing = await sbSelect<{ id: number }>(
+    `photo_report_jobs?folder_id=eq.${encodeURIComponent(folderId)}&select=id&limit=1`
+  );
+  if (existing[0]) {
+    await sbPatch(`photo_report_jobs?id=eq.${existing[0].id}`, {
+      status: "queued",
+      error: null,
+      notified_at: null,
+      updated_at: new Date().toISOString()
+    });
+    return { requeued: true };
+  }
+  await sbUpsert("photo_report_jobs", {
+    dedupe_key: `web:${folderId}`,
+    folder_id: folderId,
+    case_id: caseId || null,
+    status: "queued"
+  });
+  return { requeued: false };
 }
 
 /**

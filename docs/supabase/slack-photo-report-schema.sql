@@ -32,8 +32,24 @@ create table if not exists photo_reports (
   generated_at  timestamptz not null default now()
 );
 
--- 3) RLS：public/anon からは触らせない（service_role はRLSをバイパスするのでサーバーからは読み書き可）。
-alter table photo_report_jobs enable row level security;
-alter table photo_reports     enable row level security;
+-- 3) 生成設定：報告書の種類/実施日/物件名/担当者＋AI文章のトーン。設定モーダルが upsert、ワーカーが読む。
+--    （差分適用は migrations/20260619210000_create_photo_report_settings.sql）
+create table if not exists photo_report_settings (
+  folder_id        text primary key,
+  report_type      text not null default 'construction', -- construction(施工) / survey(調査)
+  exec_date        text,                                 -- 実施日（当面手入力）
+  property_name    text,                                 -- 物件名（将来 JUST.DB 取得）
+  reporter         text,                                 -- 担当者（表紙フッター）
+  tone_politeness  text not null default 'desu_masu',    -- desu_masu / plain
+  response_mode    text not null default 'normal',       -- normal / complaint
+  proposal_weight  text not null default 'normal',       -- strong / normal / light
+  client_type      text not null default 'corporate',    -- corporate / individual
+  updated_at       timestamptz not null default now()
+);
+
+-- 4) RLS：public/anon からは触らせない（service_role はRLSをバイパスするのでサーバーからは読み書き可）。
+alter table photo_report_jobs     enable row level security;
+alter table photo_reports         enable row level security;
+alter table photo_report_settings enable row level security;
 
 -- 補足：写真の実体・実画像は Drive が正本（ここには入れない）。report_json は fileId 参照のみ。

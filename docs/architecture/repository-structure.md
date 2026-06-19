@@ -25,7 +25,9 @@
 │  │  │  ├─ photo-report/versions/route.ts ◇ 版一覧（版名=description 含む）
 │  │  │  ├─ photo-report/rollback/route.ts ◇ 旧版で新版を書く（監査）
 │  │  │  ├─ photo-report/rename/route.ts   ◇ 版名（Drive description・本文不変）
-│  │  │  ├─ photo-report/delete/route.ts   ◇ 版削除（Drive ゴミ箱・最新版不可）
+│  │  │  ├─ photo-report/delete/route.ts   ◇ 版削除（Drive ゴミ箱・最新版不可・本人のみ）
+│  │  │  ├─ photo-report/settings/route.ts ◇ 生成設定（種類/トーン）GET/POST
+│  │  │  ├─ photo-report/generate/route.ts ◇ WEBからAI生成依頼（job投入/再投入）
 │  │  │  ├─ case-digest/route.ts       ◇ 案件ダイジェスト「口」（_ai/ 書込み）
 │  │  │  └─ reports/route.ts           ※ 旧・報告書保存（ローカルFS）
 │  │  ├─ page.tsx / layout.tsx / globals.css
@@ -41,11 +43,14 @@
 │  │  ├─ photo-report-source.ts ◇ プリフィル合成＋現在版オーバーレイ
 │  │  ├─ photo-report-store.ts ◇ 保存/版一覧/ロールバックのオーケストレーション
 │  │  ├─ report-versions.ts    ◇ 版の純粋ロジック（版名 parse/format/next・自己記述ファイル）
+│  │  ├─ photo-report-settings-store.ts ◇ 生成設定の読み書き（snake⇄camel）
+│  │  ├─ report-template.ts    ◇ PDF 定型（会社/支店フッター・免責事項）
 │  │  ├─ case-digest.ts        ◇ ダイジェスト「口」定数/履歴追記
 │  │  ├─ report-store.ts       ※ 旧・ローカルFS保存
 │  │  └─ security/{launch-token,proxy-auth,iap-user}.ts  起動トークン検証 / プロキシ認可 / IAP認証メール抽出（削除の本人判定）
 │  └─ schemas/
-│     ├─ photo-report.ts       ◇ 写真報告 report JSON（fileId参照・annotations予約）
+│     ├─ photo-report.ts       ◇ 写真報告 report JSON（fileId参照・annotations・workItems）
+│     ├─ photo-report-settings.ts ◇ 生成設定スキーマ＋表示ラベル
 │     └─ report.ts             Zod スキーマ（launch context / 旧submission）
 ├─ worker/photo-report-worker.mjs  ◇ VM常駐 AIワーカー（Drive直読み→Claude Code→photo_reports）
 ├─ tests/                      schema / token / overlay / 版 / api-route のテスト

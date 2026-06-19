@@ -10,3 +10,4 @@
 | ファイル | 内容 |
 |---|---|
 | `20260619170500_add_notified_at_to_photo_report_jobs.sql` | 3c 完了返信用に `photo_report_jobs.notified_at` を追加 |
+| `20260619210000_create_photo_report_settings.sql` | 設定（種類/実施日/物件名/担当者/トーン4種）テーブルを新設。設定モーダル→AI プロンプト反映用 |

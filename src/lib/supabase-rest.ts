@@ -68,3 +68,32 @@ export async function sbUpsert<T = Record<string, unknown>>(
   }
   return (await res.json()) as T[];
 }
+
+/**
+ * PostgREST に PATCH（更新）。返り値は更新された行。
+ * @param path 例: `photo_report_jobs?id=eq.5`
+ */
+export async function sbPatch<T = Record<string, unknown>>(
+  path: string,
+  body: Record<string, unknown>
+): Promise<T[]> {
+  if (!URL || !KEY) {
+    throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY が未設定です。");
+  }
+  const res = await fetch(`${URL}/rest/v1/${path}`, {
+    method: "PATCH",
+    headers: {
+      apikey: KEY,
+      Authorization: `Bearer ${KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify(body),
+    cache: "no-store"
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Supabase patch ${res.status}: ${text}`);
+  }
+  return (await res.json()) as T[];
+}

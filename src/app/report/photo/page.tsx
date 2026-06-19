@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { PhotoReportEditor } from "@/components/photo-report-editor";
 import { driveConfigured } from "@/lib/drive";
 import { loadPhotoReportView } from "@/lib/photo-report-source";
+import { loadSettings } from "@/lib/photo-report-settings-store";
 import { iapUserEmail } from "@/lib/security/iap-user";
 import { verifyLaunchToken } from "@/lib/security/launch-token";
 
@@ -69,8 +70,12 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
   const caseId = verifyLaunchToken(safeToken).caseId;
 
   let view;
+  let settings;
   try {
-    view = await loadPhotoReportView(caseId, safeFolderId);
+    [view, settings] = await Promise.all([
+      loadPhotoReportView(caseId, safeFolderId),
+      loadSettings(safeFolderId)
+    ]);
   } catch (error) {
     return (
       <main>
@@ -92,6 +97,7 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
     <main>
       <PhotoReportEditor
         initialView={view}
+        initialSettings={settings}
         caseId={caseId}
         folderId={safeFolderId}
         token={safeToken}

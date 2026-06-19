@@ -54,6 +54,7 @@ const annotationSchema = z.object({
 });
 const reportJsonSchema = z.object({
   headerSummary: z.string().max(2000).optional(),
+  workItems: z.array(z.string().max(300)).max(50).default([]), // 施工内容/調査内容（最終ページ）
   photoItems: z
     .array(
       z.object({
@@ -270,21 +271,78 @@ async function upsertReport(folderId, caseId, reportJson) {
   );
 }
 
-function buildPrompt(ctx, docFileNames, hasDigest) {
+/** フォルダの生成設定を読む（photo_report_settings）。無ければ null（既定で生成）。 */
+async function getSettings(folderId) {
+  try {
+    const rows = await sb(
+      "GET",
+      `photo_report_settings?folder_id=eq.${encodeURIComponent(folderId)}&select=*&limit=1`
+    );
+    return rows && rows[0] ? rows[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 設定 → Claude プロンプトの指示行（日本語）。s は snake_case 行 or null。 */
+function settingsLines(s) {
+  const type = s?.report_type === "survey" ? "survey" : "construction";
+  const tone = s?.tone_politeness === "plain" ? "plain" : "desu_masu";
+  const resp = s?.response_mode === "complaint" ? "complaint" : "normal";
+  const weight = s?.proposal_weight === "strong" ? "strong" : s?.proposal_weight === "light" ? "light" : "normal";
+  const client = s?.client_type === "individual" ? "individual" : "corporate";
+  const kind = type === "survey" ? "調査" : "施工";
+  const lines = [];
+  lines.push(
+    type === "survey"
+      ? "これは【調査報告書】です。現地調査で確認した状況・所見・被害/リスクを中心に記述してください。"
+      : "これは【施工報告書】です。実施した施工内容（処理した場所・薬剤・工法）を中心に記述してください。"
+  );
+  lines.push(
+    tone === "plain"
+      ? "文体は【言い切り調】：簡潔に（〜した／体言止め可）。"
+      : "文体は【ですます調】：丁寧に（〜しました／〜します）。"
+  );
+  if (resp === "complaint") {
+    lines.push("【クレーム対応】の案件です。誠実かつ丁寧に、事実と対応を明確にし、相手の不安に配慮した表現にしてください。");
+  }
+  lines.push(
+    weight === "strong"
+      ? "まとめ(headerSummary)では、追加対策・再施工/メンテナンスの必要性を【しっかり】提案的に記述してください。"
+      : weight === "light"
+        ? "提案は【軽め】に、事実報告を主にしてください。"
+        : "提案は【普通】程度にとどめてください。"
+  );
+  lines.push(
+    client === "individual"
+      ? "相手は【個人のお客様】です。専門用語はかみ砕き、分かりやすく丁寧に書いてください。"
+      : "相手は【法人】です。簡潔・実務的に書いてください。"
+  );
+  return { lines, kind };
+}
+
+function buildPrompt(ctx, docFileNames, hasDigest, settings) {
+  const { lines: setLines, kind } = settingsLines(settings);
   const docLine = hasDigest
     ? "このディレクトリの **case-digest.md** に案件の時系列ダイジェスト（引き合い・調査・見積・経緯の要約）があります。**まずそれを読み、実際の作業内容（対象生物・対策の種類）を正確に把握**してから写真を説明してください。"
     : docFileNames.length
       ? `このディレクトリには現場写真(画像)に加え、案件書類のPDF（${docFileNames.join(" / ")}）があります。**まず書類を読み、実際の作業内容（対象生物・対策の種類など）を正確に把握**してから写真を説明してください。`
       : "案件書類は無いので、フォルダ名と写真から判断してください。";
   return [
-    "このディレクトリにある画像は、害虫防除（駆除）作業の現場写真です。これから写真報告書の下書きを作ります。",
+    `このディレクトリにある画像は、害虫防除（${kind}）の現場写真です。これから写真報告書の下書きを作ります。`,
     docLine,
     `参考フォルダ名: 親=「${ctx.parentName}」 / 当該=「${ctx.folderName}」。`,
+    "【報告書の方針】",
+    ...setLines,
     "**写真だけで対象生物や作業を断定しない**こと（書類・フォルダ名の根拠を優先）。不明な点は無理に決めつけない。",
-    "各写真に、日本語で**短い見出し(heading・全角20字程度)**と、**簡潔な所見(annotationNote・1〜2文/全角120字程度)**を付けてください。冗長にしない。",
-    "全体の要約(headerSummary・3文程度)も作成。写真は意味の通る順に並べ替えてよい。",
+    "【書き方】",
+    "・各写真の見出し(heading)は **全角20字以内** の簡潔な作業名（例『103号室の風呂場下の木部を穿孔処理』『大引きに薬剤を散布処理』『使用薬剤』）。",
+    "・所見(annotationNote)は基本不要（空でよい）。見出しで足りる。",
+    "・写真は意味の通る順（部屋ごと・工程順）に並べ替えてよい。",
+    `・headerSummary は${kind}概要（まとめ）。上記の文体・トーンで2〜3文。`,
+    `・workItems は実施した${kind}内容を **数項目に集約** した配列（各項目1文・場所＋処理を簡潔に。例『101号室・102号室・103号室の床下に木部剤・土壌剤を散布処理』）。最終ページの一覧に使う。`,
     "出力は **このディレクトリに report.json を1つ書き出す**こと。形式は厳密に次のJSONのみ:",
-    '{ "headerSummary": "…", "photoItems": [ { "fileId": "<画像ファイル名から拡張子を除いた部分>", "heading": "…", "annotationNote": "…" } ] }',
+    '{ "headerSummary": "…", "workItems": ["…","…"], "photoItems": [ { "fileId": "<画像ファイル名から拡張子を除いた部分>", "heading": "…" } ] }',
     "fileId は各**画像**ファイル名の拡張子を除いた部分（例 1AbC.jpg → 1AbC）。case-digest.md / context-*.pdf は文脈用で報告対象ではない。JSON以外の文章は report.json に書かないこと。"
   ].join("\n");
 }
@@ -353,7 +411,8 @@ async function processJob(job) {
       }
     }
 
-    const { stdout } = await runClaude(dir, buildPrompt(ctx, docNames, !!digest));
+    const settings = await getSettings(job.folder_id);
+    const { stdout } = await runClaude(dir, buildPrompt(ctx, docNames, !!digest, settings));
 
     // 通常は claude が report.json を書く。書かれていない場合:
     //  ・stdout に JSON があればそれを採用（claude がファイルでなく出力に返した時の保険）

@@ -263,6 +263,44 @@ button:disabled {
   padding: 8px 10px;
 }
 
+button.btn-secondary {
+  background: #eef2f7;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* 設定モーダル */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 50;
+}
+
+.modal {
+  width: min(460px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 20px;
+  display: grid;
+  gap: 8px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+
+.modal h2 {
+  margin: 0;
+}
+
+/* 印刷(PDF)専用ブロックは画面では隠す（@media print で表示）。 */
+.print-only {
+  display: none;
+}
+
 /* 写真注記レイヤー（赤丸など） */
 .annot {
   display: grid;
@@ -393,5 +431,129 @@ button:disabled {
     resize: none;
     min-height: 0;
     color: var(--text);
+  }
+
+  /* ===== PDF レイアウト（ゴール PDF 準拠） ===== */
+  .print-only {
+    display: block;
+  }
+
+  /* 印刷は A4 幅＝2列を維持（画面用の 1 列化メディアクエリを上書き） */
+  .photo-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px;
+  }
+
+  /* 表紙 */
+  .print-cover {
+    break-after: page;
+    text-align: center;
+  }
+  .cover-title {
+    font-size: 28pt;
+    margin: 0 0 12px;
+  }
+  .cover-photo {
+    width: 100%;
+    max-height: 130mm;
+    object-fit: contain;
+    border: 1px solid #000;
+    margin-bottom: 10px;
+  }
+  .cover-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 6px 0 18px;
+  }
+  .cover-table th,
+  .cover-table td {
+    border: 1px solid #000;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 12pt;
+  }
+  .cover-table th {
+    width: 30%;
+    white-space: nowrap;
+  }
+  .cover-company {
+    margin-top: 24px;
+    line-height: 1.7;
+    font-size: 10.5pt;
+    color: #333;
+  }
+  .cover-company-name {
+    font-size: 20pt;
+    font-weight: 800;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  /* 写真キャプション（番号＋見出し）＋カードの装飾を除去 */
+  .print-caption {
+    display: block;
+    font-weight: 700;
+    font-size: 10pt;
+    margin-bottom: 3px;
+  }
+  .photo-card {
+    border: none;
+    padding: 0 0 6px;
+  }
+  .annot-wrap {
+    border: none;
+    border-radius: 0;
+  }
+
+  /* 最終ページ：概要／内容／免責 */
+  .print-summary {
+    break-before: page;
+  }
+  .summary-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .summary-property {
+    font-size: 14pt;
+    font-weight: 700;
+  }
+  .summary-date {
+    font-size: 11pt;
+  }
+  .summary-box {
+    border: 1px solid #000;
+    margin-bottom: 10px;
+    break-inside: avoid;
+  }
+  .summary-box h3 {
+    margin: 0;
+    padding: 4px 8px;
+    border-bottom: 1px solid #000;
+    background: #f0f0f0;
+    font-size: 10.5pt;
+  }
+  .summary-text,
+  .summary-items,
+  .summary-disclaimer {
+    padding: 8px 10px;
+    margin: 0;
+    font-size: 10.5pt;
+    line-height: 1.6;
+  }
+  .summary-items {
+    padding-left: 28px;
+  }
+  .summary-disclaimer p {
+    margin: 0 0 4px;
+    font-size: 8pt;
+    line-height: 1.4;
+    color: #222;
+  }
+  .summary-end {
+    text-align: right;
+    font-size: 10.5pt;
+    margin-top: 6px;
   }
 }

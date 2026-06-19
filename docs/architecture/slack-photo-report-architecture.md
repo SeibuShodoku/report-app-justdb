@@ -79,6 +79,15 @@
 - スキーマ予約：`photoReportDraftSchema` の各写真に **`annotations: []`** を持たせる（UI は後フェーズでも、版に乗るよう先に予約）。
 - UNDO/REDO は配列の push/pop＝**画像UNDOの煩雑さなし**。注記は report JSON の一部なので**版管理に自動で乗り、ロールバックで赤丸も一緒に戻る**。
 
+## 6.5 報告書の設定（種類・トーン）とPDF体裁
+ゴール体裁＝**齋藤マンション様 PDF**（表紙→番号付き写真グリッド→最終ページ）。
+
+- **設定＝folder_id 単位・Supabase `photo_report_settings`**：報告書の種類(調査/施工)・実施日(当面手入力)・物件名(将来 JUST.DB 取得)・担当者＋**AI 文章のトーン**(ですます/言い切り・通常/クレーム・提案重要度しっかり/普通/軽め・法人/個人)。
+- **設定 UI ＝ WEB 報告書ページ `/report/photo` の⚙️設定モーダル**（リッチ UI・JUST.DB 取得もサーバー側）。保存＝`POST /api/photo-report/settings`。Slack 「⚙️設定」はこのページURLを発行する導線（実装は後追い）。
+- **生成**＝Slack「📝報告書作成」 or WEB「AIで再作成」(`POST /api/photo-report/generate` が `photo_report_jobs` を投入/再投入)。**VM ワーカーが設定を読み Claude プロンプトへ反映**（種類/文体/対応/提案/法人個人）。見出しは**全角20字以内**・所見は基本省略・**`workItems`(施工内容)** と `headerSummary`(概要) を生成。
+- **出力体裁（印刷=PDF・report-app の print CSS）**：表紙（種類タイトル「施工報告書/調査報告書」・{種類}実施日・{種類}現場・会社フッター＝城東支店定型＋担当者）→ **番号付き2列グリッド**（「N．見出し」のみ）→ 最終ページ（{種類}概要＝`headerSummary` / {種類}内容＝`workItems` 番号付き / **免責事項**＝定型 `lib/report-template.ts`）。PDF 生成はブラウザ印刷（システムは PDF を保管しない）。
+- 物件名の **JUST.DB ライブ取得**は API 予算（`open-issues §0`）が解けてから（当面モーダル手入力・将来 §3 Lane B の 1件 GET）。
+
 ## 7. 案件ダイジェスト統合（役割分担）
 - **要約は digest-gas に一本化**（Slackスレッドのマージ要約は既存の強み。重複させない）。
 - **「口」は report-app 側**（Drive アクセスを持つ層）。digest-gas は要約コンテンツを「口」へ渡すだけ。「口」が **`_ai/` の作成・digest.md/slack履歴md の保守・GD書類の既読索引**を担う。
@@ -130,6 +139,7 @@
   - **版名・削除**：版名＝Drive `description`（保存時付与＋後編集 `POST …/rename`・本文不変）。削除＝Drive ゴミ箱（`POST …/delete`・復元可・**最新版は不可**・**作成者本人のみ**＝IAPメールと `createdBy` を照合）。
   - **注記（§6）**＝`PhotoAnnotator`：写真上の透明SVG＋Pointer Events（マウス/指/ペン）。赤丸/囲み/矢印/線/手書き/テキスト、色、選択/削除、UNDO/REDO（配列）。座標は0〜1正規化（実表示boxをResizeObserverで測り均一px空間で描画＝歪まない）。注記は report JSON の一部＝版に同梱・ロールバックで一緒に戻る。
   - 書くのは report-app（RWトークン）。ワーカーは readonly 据置。**ブラウザ確認済（2026-06-19）**：保存→v0001/v0002 生成、版一覧、ロールバック。版名/削除は実装直後（要通し）。
+- ✅ **設定モーダル＋PDF体裁（2026-06-19）**：`photo_report_settings`（種類/実施日/物件名/担当者/トーン4種）＋⚙️設定モーダル＋「AIで再作成」(`/api/photo-report/{settings,generate}`)。ワーカーが設定をプロンプト反映（見出し≤20・`workItems` 生成）。印刷を齋藤マンション様 PDF 体裁（表紙/番号付きグリッド/概要・内容・免責）に。**残＝Slack「⚙️設定」のURL導線・物件名のJUST.DB取得**。
 - ⬜ **ダイジェスト“生成”**（最終融合・IAP 解決）。
 
 ## 11. 決定ログ（要点）
