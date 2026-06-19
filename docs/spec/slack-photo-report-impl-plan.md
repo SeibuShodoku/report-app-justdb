@@ -83,6 +83,22 @@
 
 ---
 
+## フェーズ 2.5：案件ダイジェスト統合（「口」）
+
+詳細＝`../architecture/slack-photo-report-architecture.md` §4。要約は digest-gas に一本化、**永続の「口」は report-app 側**。
+
+- [x] **Drive 書込スコープ準備**：`drive` full の refresh token を発行し Cloud Run の `GOOGLE_DRIVE_REFRESH_TOKEN` に設定（rev00002）。VMはreadonly据置。フォルダ作成→md書込→削除のドライラン成功。
+- [ ] **「口」API（report-app）**：案件GDフォルダ配下に **AI専用サブフォルダ作成**（命名は当面ざっくり）＋ **コアダイジェストmd / Slack要約履歴md の書込/読取**。
+- [ ] **GD書類の既読索引**：書類は一度読んだら既読化し、コアmdに索引（名前/日付/種別＋要点）だけ持つ（欲張らない）。
+- [ ] **マッピング**：JUST.DB案件一覧（GOOGLE_DRIVE_URL / SLACK_THREAD_TS / SLACK_CHANNEL_ID / 案件ID）で案件↔フォルダ↔スレッドを解決。
+- [ ] **digest-gas 連携**：digest-gas（本番GAS・cron）が要約を「口」へ渡す。**加点的・ガード付き**で（既存トピック要約を壊さない）。
+- [ ] **ワーカー切替**：写真報告ワーカーを「PDF選読」→「**コアmd を読む**」に変更。
+- [ ] **注意**：AI専用フォルダの mgmt 限定 ACL は、親フォルダ共有の継承との兼ね合いを実機確認して詰める。
+
+> **M2.5**：ある案件で「口」を叩く → AI専用フォルダにコアmd が出来る → ワーカーがそれを文脈に使い、より正確な report JSON を生成。
+
+---
+
 ## フェーズ 3：GAS / Slack（`slack-mini-bolt` 資産）
 
 経路：Slack → `seibot-proxy`（署名検証）→ GAS。3 秒 ACK 厳守。
