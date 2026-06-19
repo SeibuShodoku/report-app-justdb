@@ -49,6 +49,7 @@
 
 - 入力必須項目のバリデーション
 - 監査ログ（作成者・作成日時・案件ID）。防除用医薬品の使用記録は保管義務に留意
+  - **写真報告フローでは設計で充足（2026-06-19）**：作成者＝版JSON `createdBy`（IAPメール）/ 日時＝`generated_at`・ジョブ時刻 / 案件＝`case_id`・`folder_id` / 内容＝版JSON append-only（不変）。詳細＝`architecture/slack-photo-report-architecture.md §8.1`。
 - コスト最適化（画像圧縮、PDF生成は明示操作時のみ）
 
 ## 7. 関連ドキュメント

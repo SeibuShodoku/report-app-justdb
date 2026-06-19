@@ -94,6 +94,19 @@
 - 顧客写真を Claude に渡すのは D-AIDATA で許可（学習不使用の閉空間＝Team/API）。
 - hub-gas Script Properties：`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `PHOTO_REPORT_TESTERS`（テスト中はテスター以外のボタン押下を即 return）。
 
+### 8.1 監査ログ（作成者・日時・案件）
+専用テーブルは設けず、**既存の記録の組み合わせ**で監査線を満たす（`requirements.md §6`）。
+
+| 観点 | どこに残るか |
+|---|---|
+| 誰が | 人の版＝版JSON `createdBy`＋Drive `appProperties.createdBy`（IAP メール）／AI 版＝`source=ai`（VM ワーカー） |
+| いつ | 各版 `generated_at`／`photo_report_jobs.created_at`・`updated_at`・`notified_at` |
+| 何の案件・対象 | `case_id`・`folder_id`（ジョブ／`photo_reports`／版JSON `folderName`・`report.caseId`） |
+| 何を作った（内容） | **版JSON の `report` は append-only で不変**＝過去版を書き換えない＝防除用医薬品の使用記録の保管に資する |
+| 試行・失敗 | `photo_report_jobs.attempts`（上限 `MAX_ATTEMPTS`）・`error` |
+
+- **既知の小ギャップ**：📸報告書ボタンを押した **Slack ユーザーID は未記録**（`channel`/`thread_ts` は記録）。AI 生成のトリガー主体まで残すなら hub-gas で job に slack user を載せる（将来・低優先）。
+
 ## 9. 継ぎ目（D-PORTS・契約候補）
 | 継ぎ目 | 種別 |
 |---|---|

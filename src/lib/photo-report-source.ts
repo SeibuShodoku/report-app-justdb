@@ -1,12 +1,12 @@
 /**
  * 写真報告書の「プリフィル元データ」を組み立てるサーバーヘルパー。
  *
- * 当面は Drive フォルダの画像一覧から素の下書き（見出し・注記なし）を合成する＝
- * 「フォルダの写真をそのまま並べた写真報告書」。
- * Phase 2 で VM 常駐 Claude が生成した report JSON（Supabase 保存）を載せ、
- * heading / annotationNote / 並び / headerSummary を上書きする予定（下記 TODO）。
+ * Drive フォルダの画像一覧から素の下書き（見出し・注記なし）を合成し、保存済み report JSON
+ * （Supabase `photo_reports`・現在版）があれば `overlayReport` で heading / annotationNote /
+ * annotations / 並び / headerSummary を上書きする（AI 生成・人の編集どちらも現在版＝Supabase）。
+ * 版履歴は Drive `_ai/reports/<folder_id>/v*.json`（`photo-report-store.ts`）。
  *
- * 仕様: docs/spec/slack-photo-report.md §6 / 実装計画 §1c・§2
+ * 仕様: docs/architecture/slack-photo-report-architecture.md §5 / 実装計画 §1c・§2
  */
 import { driveListImages, type DriveImage } from "@/lib/drive";
 import { sbSelect, supabaseConfigured } from "@/lib/supabase-rest";
