@@ -31,6 +31,7 @@ export type VersionListEntry = {
   fileId: string;
   modifiedTime?: string;
   label?: string; // 人が付けた版名（Drive description）
+  createdBy?: string; // 作成者メール（Drive appProperties.createdBy）。削除可否の判定に使う
 };
 
 /** 現在版を Supabase `photo_reports` に上書き（folder_id キー）。 */
@@ -59,6 +60,7 @@ async function upsertCurrent(
 export async function saveReportVersion(args: {
   report: PhotoReportDraft;
   source: ReportVersionSource;
+  createdBy?: string;
   note?: string;
   label?: string;
   folderName?: string;
@@ -75,11 +77,15 @@ export async function saveReportVersion(args: {
     version,
     report,
     source: args.source,
+    createdBy: args.createdBy,
     note: args.note,
     folderName: args.folderName
   });
-  // 版名（label）は Drive description＝メタデータに置く（本文は不変）。
-  await createTextFile(dirId, fileName, JSON.stringify(payload, null, 2), "application/json", args.label?.trim() || undefined);
+  // 版名（label）は Drive description、作成者は appProperties＝いずれもメタデータ（本文は不変）。
+  await createTextFile(dirId, fileName, JSON.stringify(payload, null, 2), {
+    description: args.label?.trim() || undefined,
+    appProperties: args.createdBy ? { createdBy: args.createdBy } : undefined
+  });
   await upsertCurrent(report, args.source, payload.generatedAt);
 
   return { version, fileName, savedAt: payload.generatedAt };
@@ -94,7 +100,13 @@ export async function listReportVersions(folderId: string): Promise<VersionListE
   for (const f of files) {
     const version = parseVersionNumber(f.name);
     if (version === null) continue;
-    out.push({ version, fileId: f.id, modifiedTime: f.modifiedTime, label: f.description });
+    out.push({
+      version,
+      fileId: f.id,
+      modifiedTime: f.modifiedTime,
+      label: f.description,
+      createdBy: f.appProperties?.createdBy
+    });
   }
   out.sort((a, b) => b.version - a.version);
   return out;
@@ -116,9 +128,15 @@ export async function renameReportVersion(
 
 /**
  * 版を削除する＝Drive ゴミ箱へ（復元可・物理削除しない）。
- * **最新版は削除不可**（現在版＝Slack/ページの表示元・版番号連番の起点。先に別版へ戻すこと）。
+ * - **最新版は削除不可**（現在版＝Slack/ページの表示元・版番号連番の起点。先に別版へ戻すこと）。
+ * - **作成者本人のみ削除可**（`requesterEmail` と版の作成者を照合）。作成者未記録の旧版／
+ *   識別できない場合（IAP なしのローカル）は制限しない。
  */
-export async function deleteReportVersion(folderId: string, version: number): Promise<void> {
+export async function deleteReportVersion(
+  folderId: string,
+  version: number,
+  requesterEmail?: string | null
+): Promise<void> {
   const dirId = await resolveReportVersionsDir(folderId, false);
   if (!dirId) throw new Error("版ディレクトリがありません。");
   const files = await listFolderFiles(dirId);
@@ -132,6 +150,11 @@ export async function deleteReportVersion(folderId: string, version: number): Pr
   }
   const target = files.find((f) => parseVersionNumber(f.name) === version);
   if (!target) throw new Error(`版 v${version} が見つかりません。`);
+
+  const owner = target.appProperties?.createdBy;
+  if (owner && requesterEmail && owner !== requesterEmail) {
+    throw new Error(`この版は ${owner} が作成したため削除できません（作成者本人のみ）。`);
+  }
   await trashFileById(target.id);
 }
 
@@ -163,6 +186,7 @@ export async function rollbackToVersion(args: {
   folderId: string;
   caseId: string;
   version: number;
+  createdBy?: string;
 }): Promise<SavedVersion> {
   const report = await readVersionReport(args.folderId, args.version);
   // 認可済みの folderId / caseId を権威とする。
@@ -171,6 +195,7 @@ export async function rollbackToVersion(args: {
   return saveReportVersion({
     report,
     source: "human",
+    createdBy: args.createdBy,
     note: `v${args.version} からロールバック`
   });
 }

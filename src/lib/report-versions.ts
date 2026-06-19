@@ -21,6 +21,7 @@ export type ReportVersionFile = {
   version: number;
   generatedAt: string; // ISO8601
   source: ReportVersionSource;
+  createdBy?: string; // 作成者（IAP メール）。削除は本人のみ＝この記録が根拠
   note?: string;
   folderName?: string;
   report: PhotoReportDraft;
@@ -57,6 +58,7 @@ export function buildVersionFile(args: {
   version: number;
   report: PhotoReportDraft;
   source: ReportVersionSource;
+  createdBy?: string;
   note?: string;
   folderName?: string;
   now?: Date;
@@ -65,6 +67,7 @@ export function buildVersionFile(args: {
     version: args.version,
     generatedAt: (args.now ?? new Date()).toISOString(),
     source: args.source,
+    ...(args.createdBy ? { createdBy: args.createdBy } : {}),
     ...(args.note ? { note: args.note } : {}),
     ...(args.folderName ? { folderName: args.folderName } : {}),
     report: args.report

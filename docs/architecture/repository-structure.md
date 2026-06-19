@@ -43,7 +43,7 @@
 │  │  ├─ report-versions.ts    ◇ 版の純粋ロジック（版名 parse/format/next・自己記述ファイル）
 │  │  ├─ case-digest.ts        ◇ ダイジェスト「口」定数/履歴追記
 │  │  ├─ report-store.ts       ※ 旧・ローカルFS保存
-│  │  └─ security/{launch-token,proxy-auth}.ts  起動トークン検証 / プロキシ認可（browser=token・VM=secret）
+│  │  └─ security/{launch-token,proxy-auth,iap-user}.ts  起動トークン検証 / プロキシ認可 / IAP認証メール抽出（削除の本人判定）
 │  └─ schemas/
 │     ├─ photo-report.ts       ◇ 写真報告 report JSON（fileId参照・annotations予約）
 │     └─ report.ts             Zod スキーマ（launch context / 旧submission）

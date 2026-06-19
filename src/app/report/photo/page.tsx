@@ -1,6 +1,8 @@
+import { headers } from "next/headers";
 import { PhotoReportEditor } from "@/components/photo-report-editor";
 import { driveConfigured } from "@/lib/drive";
 import { loadPhotoReportView } from "@/lib/photo-report-source";
+import { iapUserEmail } from "@/lib/security/iap-user";
 import { verifyLaunchToken } from "@/lib/security/launch-token";
 
 // Drive 読み取り（node:crypto/fetch）を行うため Node ランタイム固定・毎回最新を取得。
@@ -83,6 +85,9 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
     );
   }
 
+  // IAP の認証ユーザー（削除可否＝作成者本人かの UI 判定に使う。サーバー側でも別途強制）。
+  const currentUserEmail = iapUserEmail(await headers());
+
   return (
     <main>
       <PhotoReportEditor
@@ -90,6 +95,7 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
         caseId={caseId}
         folderId={safeFolderId}
         token={safeToken}
+        currentUserEmail={currentUserEmail ?? undefined}
       />
     </main>
   );

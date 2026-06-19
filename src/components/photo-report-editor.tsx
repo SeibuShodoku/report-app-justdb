@@ -23,12 +23,19 @@ type EditItem = {
   annotations: Annotation[];
 };
 
-type VersionEntry = { version: number; fileId: string; modifiedTime?: string; label?: string };
+type VersionEntry = {
+  version: number;
+  fileId: string;
+  modifiedTime?: string;
+  label?: string;
+  createdBy?: string;
+};
 
 type Props = {
   caseId: string;
   folderId: string;
   token: string;
+  currentUserEmail?: string;
 };
 
 /** ブラウザが画像プロキシ経由で写真を取得する URL（pure・サーバーモジュール非依存）。 */
@@ -52,7 +59,8 @@ export function PhotoReportEditor({
   initialView,
   caseId,
   folderId,
-  token
+  token,
+  currentUserEmail
 }: Props & { initialView: PhotoReportView }) {
   const [items, setItems] = useState<EditItem[]>(() => toEditItems(initialView));
   const [headerSummary, setHeaderSummary] = useState(initialView.headerSummary ?? "");
@@ -268,12 +276,23 @@ export function PhotoReportEditor({
             <ul className="version-list">
               {versions.map((v, vi) => {
                 const isLatest = vi === 0; // 降順なので先頭＝最新＝現在版
+                // 作成者が記録されていて、かつ本人でなければ削除不可（旧版＝未記録は許容）。
+                const notOwner = Boolean(
+                  v.createdBy && currentUserEmail && v.createdBy !== currentUserEmail
+                );
+                const deleteDisabled = busyVersion !== null || isLatest || notOwner;
+                const deleteTitle = isLatest
+                  ? "最新版（現在版）は削除できません。先に別版へ戻してください。"
+                  : notOwner
+                    ? `作成者（${v.createdBy}）のみ削除できます。`
+                    : "Drive のゴミ箱へ（復元可）";
                 return (
                   <li key={v.version}>
                     <span>
                       v{v.version}
                       {isLatest ? "（現在版）" : ""}
                       {v.label ? `・${v.label}` : ""}
+                      {v.createdBy ? `・${v.createdBy}` : ""}
                       {v.modifiedTime ? `・${new Date(v.modifiedTime).toLocaleString("ja-JP")}` : ""}
                     </span>
                     <span className="version-actions">
@@ -294,8 +313,8 @@ export function PhotoReportEditor({
                       <button
                         type="button"
                         onClick={() => deleteVersion(v.version)}
-                        disabled={busyVersion !== null || isLatest}
-                        title={isLatest ? "最新版（現在版）は削除できません。先に別版へ戻してください。" : "Drive のゴミ箱へ（復元可）"}
+                        disabled={deleteDisabled}
+                        title={deleteTitle}
                       >
                         削除
                       </button>

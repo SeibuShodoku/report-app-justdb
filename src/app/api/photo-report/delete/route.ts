@@ -1,5 +1,6 @@
 import { deleteReportVersion } from "@/lib/photo-report-store";
 import { driveWriteConfigured } from "@/lib/drive-write";
+import { iapUserEmail } from "@/lib/security/iap-user";
 import { authorizeFolderAccess } from "@/lib/security/proxy-auth";
 
 export const runtime = "nodejs";
@@ -37,12 +38,16 @@ export async function POST(request: Request) {
   }
 
   try {
-    await deleteReportVersion(folderId, version);
+    await deleteReportVersion(folderId, version, iapUserEmail(request.headers));
     return Response.json({ version, trashed: true });
   } catch (error) {
-    // 最新版削除など運用上の拒否は 409 で返す（500 と区別）。
+    // 運用上の拒否は専用ステータスで返す（500 と区別）。
     const msg = error instanceof Error ? error.message : "版の削除に失敗しました。";
-    const status = msg.includes("最新版は削除できません") ? 409 : 500;
+    const status = msg.includes("作成者本人")
+      ? 403
+      : msg.includes("最新版は削除できません")
+        ? 409
+        : 500;
     return Response.json({ error: msg }, { status });
   }
 }

@@ -1,5 +1,6 @@
 import { driveWriteConfigured } from "@/lib/drive-write";
 import { saveReportVersion } from "@/lib/photo-report-store";
+import { iapUserEmail } from "@/lib/security/iap-user";
 import { authorizeFolderAccess } from "@/lib/security/proxy-auth";
 import { supabaseConfigured } from "@/lib/supabase-rest";
 import { photoReportDraftSchema } from "@/schemas/photo-report";
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
     const saved = await saveReportVersion({
       report: parsed.data,
       source: "human",
+      createdBy: iapUserEmail(request.headers) ?? undefined,
       note,
       label,
       folderName

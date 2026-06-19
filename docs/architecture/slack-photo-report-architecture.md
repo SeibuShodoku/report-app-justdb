@@ -62,9 +62,12 @@
 - **版履歴＝Drive `_ai/reports/<folder_id>/v0001.json, v0002.json …`（append-only）**。
   - 各版の**報告内容（JSON本文）は書いたら不変**（過去版の本文を書き換えない＝履歴の完全性／同時編集での破壊を回避）。最新＝最大番号。
   - **保存** → `v{次番号}.json` を追記 ＋ Supabase を上書き。**ロールバック** → 旧版の内容で `v{次番号}.json` を**新規に書く** ＋ Supabase 更新（ロールバックも1版として記録＝監査に強い）。
-  - 各版ファイルは自己記述（`version`/`generated_at`/`source`=ai|human/`note`/`folderName`/`report`）。可変なインデックスファイルは持たない。
+  - 各版ファイルは自己記述（`version`/`generated_at`/`source`=ai|human/`createdBy`/`note`/`folderName`/`report`）。可変なインデックスファイルは持たない。
+  - **作成者＝IAP の認証メール**を保存/ロールバック時に記録（版JSON `createdBy`＝不変の監査／Drive `appProperties.createdBy`＝一覧で安く取れる判定用）。
   - **版名（ラベル）＝Drive ファイルの `description`（メタデータ）**。人が保存時に付与・後から編集可。**本文は触らないので不変性を保つ**。一覧は `files.list` で安く取れる（本文を読み直さない）。
-  - **削除＝Drive ゴミ箱（trashed・復元可）**。物理削除しない＝「人の自己責任の例外」を可逆に留める。**最新版（＝現在版・連番の起点）は削除不可**（消すなら先に別版へ戻す）。中間版の欠番は許容（連番は最大＋1で単調）。
+  - **削除＝Drive ゴミ箱（trashed・復元可）**。物理削除しない＝「人の自己責任の例外」を可逆に留める。
+    - **最新版（＝現在版・連番の起点）は削除不可**（消すなら先に別版へ戻す）。中間版の欠番は許容（連番は最大＋1で単調）。
+    - **作成者本人のみ削除可**（サーバーで `createdBy` と IAP メールを照合・UI も他人の版は無効化）。作成者未記録の旧版／IAP なしのローカルは制限しない。
   - **書くのは report-app**（RW トークン保有）。**ワーカーは readonly のまま**＝VM→Cloud Run の IAP 越え不要・権限拡大なし。
 - **PDF はシステムでは生成・保管しない**。人が WEB から任意で印刷。複数報告書の取り回し・恒久保管は人の運用（PDF）に委ねる。
 
@@ -111,7 +114,7 @@
   - **編集**＝見出し/所見/全体要約/並び替え（クライアント島 `PhotoReportEditor`）。
   - **保存＝新版**：Drive `_ai/reports/<folder_id>/v{連番}.json`(append-only・不変・自己記述) を1つ書き、Supabase 現在版を上書き（`POST /api/photo-report/save`）。版ディレクトリは**親案件フォルダ**の `_ai`（digest と共用）。
   - **ロールバック**：版一覧（`GET …/versions`）→旧版の内容で**新版を書く**（`POST …/rollback`・1版＝監査）。
-  - **版名・削除**：版名＝Drive `description`（保存時付与＋後編集 `POST …/rename`・本文不変）。削除＝Drive ゴミ箱（`POST …/delete`・復元可・**最新版は不可**）。
+  - **版名・削除**：版名＝Drive `description`（保存時付与＋後編集 `POST …/rename`・本文不変）。削除＝Drive ゴミ箱（`POST …/delete`・復元可・**最新版は不可**・**作成者本人のみ**＝IAPメールと `createdBy` を照合）。
   - **注記（§6）**＝`PhotoAnnotator`：写真上の透明SVG＋Pointer Events（マウス/指/ペン）。赤丸/囲み/矢印/線/手書き/テキスト、色、選択/削除、UNDO/REDO（配列）。座標は0〜1正規化（実表示boxをResizeObserverで測り均一px空間で描画＝歪まない）。注記は report JSON の一部＝版に同梱・ロールバックで一緒に戻る。
   - 書くのは report-app（RWトークン）。ワーカーは readonly 据置。**ブラウザ確認済（2026-06-19）**：保存→v0001/v0002 生成、版一覧、ロールバック。版名/削除は実装直後（要通し）。
 - ⬜ **ダイジェスト“生成”**（最終融合・IAP 解決）。

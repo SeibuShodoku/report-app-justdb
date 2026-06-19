@@ -181,15 +181,16 @@ export type DriveFileEntry = {
   name: string;
   modifiedTime?: string;
   description?: string;
+  appProperties?: Record<string, string>;
 };
 
-/** 版ディレクトリ内の全ファイル（id/name/modifiedTime/description）を返す（版判定は呼び出し側）。 */
+/** 版ディレクトリ内の全ファイル（id/name/modifiedTime/description/appProperties）を返す（版判定は呼び出し側）。 */
 export async function listFolderFiles(folderId: string): Promise<DriveFileEntry[]> {
   const token = await getWriteToken();
   const q = `'${folderId.replace(/'/g, "\\'")}' in parents and trashed = false`;
   const params = new URLSearchParams({
     q,
-    fields: "files(id,name,modifiedTime,description)",
+    fields: "files(id,name,modifiedTime,description,appProperties)",
     pageSize: "1000",
     orderBy: "name",
     supportsAllDrives: "true",
@@ -207,18 +208,20 @@ export async function listFolderFiles(folderId: string): Promise<DriveFileEntry[
 /**
  * テキストファイルを **新規作成のみ**（upsert しない＝既存を上書きしない）。fileId を返す。
  * 版は append-only で不変にするため、保存は常に新ファイル名で create する。
- * `description` は Drive メタデータ（人が付ける版名ラベル。報告内容＝本文は触らない）。
+ * `description`＝版名ラベル、`appProperties`＝アプリ私有メタ（作成者など）。いずれも Drive メタデータで
+ * 報告内容（本文）は触らない。
  */
 export async function createTextFile(
   folderId: string,
   name: string,
   content: string,
-  mimeType = "application/json",
-  description?: string
+  opts: { mimeType?: string; description?: string; appProperties?: Record<string, string> } = {}
 ): Promise<string> {
   const token = await getWriteToken();
+  const mimeType = opts.mimeType ?? "application/json";
   const meta: Record<string, unknown> = { name, parents: [folderId] };
-  if (description) meta.description = description;
+  if (opts.description) meta.description = opts.description;
+  if (opts.appProperties) meta.appProperties = opts.appProperties;
   const boundary = "b" + Date.now();
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +

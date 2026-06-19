@@ -1,5 +1,6 @@
 import { driveWriteConfigured } from "@/lib/drive-write";
 import { rollbackToVersion } from "@/lib/photo-report-store";
+import { iapUserEmail } from "@/lib/security/iap-user";
 import { authorizeFolderAccess } from "@/lib/security/proxy-auth";
 import { supabaseConfigured } from "@/lib/supabase-rest";
 
@@ -38,7 +39,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const saved = await rollbackToVersion({ folderId, caseId: auth.caseId, version });
+    const saved = await rollbackToVersion({
+      folderId,
+      caseId: auth.caseId,
+      version,
+      createdBy: iapUserEmail(request.headers) ?? undefined
+    });
     return Response.json(saved);
   } catch (error) {
     return Response.json(
