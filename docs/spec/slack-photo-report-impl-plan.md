@@ -1,7 +1,7 @@
 # 写真報告書 自動生成（Slack 起点）実装計画書 v0.2
 
 最終更新：2026-06-19
-状態：**Phase 1/2 達成・Slackトリガー入口prod稼働。Phase 3後半（サブフォルダ/版管理/完了返信/注記）が残**
+状態：**Phase 1/2/3a/3b 達成（prod稼働・E2E検証済）。残= 3c 完了返信 / Phase4 版管理・注記**
 対象仕様（正本）：`../architecture/slack-photo-report-architecture.md`（本書はその実装手順）
 
 ## 0. 方針
@@ -110,10 +110,11 @@
 - [x] `pr_start`：スレッドに GD URL＋[⚙️設定][📝報告書作成]。`pr_create`：GD URL→folder_id→`photo_report_jobs` INSERT（409=既投入）。`pr_settings`：プレースホルダ。
 - [x] デプロイ：hub-gas=**prod 新バージョン**（block_actions の `/exec` 固定URL維持）。topic-digest=**clasp push のみ**（cron駆動・WebApp/デプロイ不要・README明記）。Script Properties 設定済（コード経由 `pr_setupProps` でGUI 50件制限を回避）。
 
-### 3b. 写真サブフォルダ化（残）＝アーキ §4
-- [ ] `pr_start`：トップ案件フォルダ配下に **`写真_YYYYMMDD` を find-or-create**（`DriveApp.getFolderById(topId).getFoldersByName/createFolder`）→ 本文リンク・ボタン value の `driveFolderUrl` を**サブフォルダ**に。
-- [ ] **同日2回目以降の `pr_start`＝エフェメラル案内**（「写真はこのフォルダへ／編集は報告書URLで」・公開投稿を増やさない）。
-- [ ] `pr_create`：**done/error の既存ジョブは再投入（status=queued に戻す＝再生成）**、queued/processing はガード。
+### 3b. 写真サブフォルダ化（✅ prod 稼働・E2E検証 2026-06-19・hub-gas `a07d64c`）＝アーキ §4
+- [x] `pr_start`：トップ案件フォルダ配下に **`写真_YYYYMMDD`(JST) を find-or-create**（`pr_ensurePhotoSubfolder_`・DriveApp）→ 本文リンク・ボタン value の `driveFolderUrl` を**サブフォルダ**に。
+- [x] **同日2回目以降の `pr_start`＝エフェメラル案内**（既存サブフォルダ検知時。公開投稿を増やさない・作成はスレ既出ボタンから）。
+- [x] `pr_create`：**done/error の既存ジョブは再投入（`pr_reenqueueIfFinished_` が status=queued に戻す＝再生成）**、queued/processing はガード。
+- 実機検証: 新サブフォルダjob=4(5枚)生成→done / 2回目クリック=エフェメラル / 完了後の再クリック=再投入(attempts2)。
 
 ### 3c. 完了返信（残）
 - [ ] done 検知（hub-gas cron で `photo_report_jobs` status=done をポーリング）→ スレッドへ「📝報告書を開く」**ボタン**を1本。
