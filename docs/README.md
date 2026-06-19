@@ -18,6 +18,7 @@
 ## 2. 設計（architecture）
 
 - `architecture/overview.md`: 全体像（役割分担・データフロー・保管・統合戦略）
+- `architecture/slack-photo-report-architecture.md`: **写真報告書システム 統合アーキ（現況の正本）**。Cloud Run/IAP・VMワーカー・案件ダイジェスト統合まで
 - `architecture/justdb-supabase-integration.md`: JUST.DB連携・カスケード・同期・書き戻し
 - `architecture/repository-structure.md`: リポジトリ構成（現況）
 
