@@ -15,7 +15,7 @@
  * 実行（VM）: 必要 env を入れて `node worker/photo-report-worker.mjs`（詳細は worker/README.md）。
  */
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -276,13 +276,15 @@ function buildPrompt(ctx, docFileNames, hasDigest) {
   ].join("\n");
 }
 
-/** VM の Claude Code をヘッドレス起動して report.json を書かせる。 */
+/** VM の Claude Code をヘッドレス起動して report.json を書かせる。stdout/stderr を返す。 */
 function runClaude(dir, prompt) {
   return new Promise((resolve, reject) => {
     // 権限プロンプトで止まらないようヘッドレス用フラグ。
     const args = ["-p", prompt, "--permission-mode", "acceptEdits"];
     const child = spawn(CLAUDE_BIN, args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
     let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
@@ -292,9 +294,19 @@ function runClaude(dir, prompt) {
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code !== 0) reject(new Error(`Claude Code 異常終了 code=${code}: ${stderr.slice(0, 500)}`));
-      else resolve();
+      else resolve({ stdout, stderr });
     });
   });
+}
+
+/** claude の stdout から JSON オブジェクトを取り出す（ファイル未生成時のフォールバック/診断用）。 */
+function extractJson(text) {
+  if (!text) return null;
+  const fence = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+  if (fence) return fence[1];
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  return start >= 0 && end > start ? text.slice(start, end + 1) : null;
 }
 
 async function processJob(job) {
@@ -318,9 +330,25 @@ async function processJob(job) {
       }
     }
 
-    await runClaude(dir, buildPrompt(ctx, docNames, !!digest));
+    const { stdout } = await runClaude(dir, buildPrompt(ctx, docNames, !!digest));
 
-    const reportJson = reportJsonSchema.parse(JSON.parse(readFileSync(join(dir, "report.json"), "utf-8")));
+    // 通常は claude が report.json を書く。書かれていない場合:
+    //  ・stdout に JSON があればそれを採用（claude がファイルでなく出力に返した時の保険）
+    //  ・無ければ claude の応答（拒否理由など）をエラーに含める（不透明な ENOENT を避ける）
+    const reportPath = join(dir, "report.json");
+    let raw;
+    if (existsSync(reportPath)) {
+      raw = readFileSync(reportPath, "utf-8");
+    } else {
+      const fromStdout = extractJson(stdout);
+      if (fromStdout) {
+        raw = fromStdout;
+        console.warn(`[warn] job=${job.id}: report.json 未生成→stdoutのJSONを採用`);
+      } else {
+        throw new Error(`report.json が生成されませんでした。claude応答: ${String(stdout).trim().slice(0, 600)}`);
+      }
+    }
+    const reportJson = reportJsonSchema.parse(JSON.parse(raw));
     await upsertReport(job.folder_id, job.case_id, reportJson);
     await finishJob(job.id, { status: "done", error: null });
     console.log(`[done] job=${job.id} folder=${job.folder_id} photos=${images.length} digest=${digest ? "yes" : "no"} docs=${docNames.length} items=${reportJson.photoItems.length}`);
