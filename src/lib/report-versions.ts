@@ -16,15 +16,19 @@ const VERSION_FILE_RE = /^v(\d{1,9})\.json$/i;
 
 export type ReportVersionSource = "ai" | "human";
 
-/** Drive に書く自己記述な版ファイルの中身。 */
-export type ReportVersionFile = {
+/** 報告書の種類（版層・マニフェスト共通）。写真報告書／防除作業報告書（紺谷V）。 */
+export type ReportType = "photo" | "prevention";
+
+/** Drive に書く自己記述な版ファイルの中身（中身型 TReport を写真/防除で切替・既定=写真で後方互換）。 */
+export type ReportVersionFile<TReport = PhotoReportDraft> = {
   version: number;
   generatedAt: string; // ISO8601
   source: ReportVersionSource;
+  reportType: ReportType; // 'photo' | 'prevention'（既存ファイルに無くても読取は .report のみ参照）
   createdBy?: string; // 作成者（IAP メール）。削除は本人のみ＝この記録が根拠
   note?: string;
   folderName?: string;
-  report: PhotoReportDraft;
+  report: TReport;
 };
 
 /** 版ファイル名から版番号を取り出す。版ファイルでなければ null。 */
@@ -53,20 +57,22 @@ export function nextVersionNumber(existingNames: string[]): number {
   return max + 1;
 }
 
-/** 自己記述な版ファイルの中身を組み立てる（JSON文字列化は呼び出し側）。 */
-export function buildVersionFile(args: {
+/** 自己記述な版ファイルの中身を組み立てる（JSON文字列化は呼び出し側）。reportType 既定=photo（後方互換）。 */
+export function buildVersionFile<TReport = PhotoReportDraft>(args: {
   version: number;
-  report: PhotoReportDraft;
+  report: TReport;
   source: ReportVersionSource;
+  reportType?: ReportType;
   createdBy?: string;
   note?: string;
   folderName?: string;
   now?: Date;
-}): ReportVersionFile {
+}): ReportVersionFile<TReport> {
   return {
     version: args.version,
     generatedAt: (args.now ?? new Date()).toISOString(),
     source: args.source,
+    reportType: args.reportType ?? "photo",
     ...(args.createdBy ? { createdBy: args.createdBy } : {}),
     ...(args.note ? { note: args.note } : {}),
     ...(args.folderName ? { folderName: args.folderName } : {}),
