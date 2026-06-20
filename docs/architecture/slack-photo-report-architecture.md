@@ -88,18 +88,20 @@
 - **出力体裁（印刷=PDF・report-app の print CSS）**：表紙（種類タイトル「施工報告書/調査報告書」・{種類}実施日・{種類}現場・会社フッター＝城東支店定型＋担当者）→ **番号付き2列グリッド**（「N．見出し」のみ）→ 最終ページ（{種類}概要＝`headerSummary` / {種類}内容＝`workItems` 番号付き / **免責事項**＝定型 `lib/report-template.ts`）。PDF 生成はブラウザ印刷（システムは PDF を保管しない）。
 - 物件名の **JUST.DB ライブ取得**は API 予算（`open-issues §0`）が解けてから（当面モーダル手入力・将来 §3 Lane B の 1件 GET）。
 
-## 7. 案件ダイジェスト統合（役割分担）
-- **要約は digest-gas に一本化**（Slackスレッドのマージ要約は既存の強み。重複させない）。
-- **「口」は report-app 側**（Drive アクセスを持つ層）。digest-gas は要約コンテンツを「口」へ渡すだけ。「口」が **`_ai/` の作成・digest.md/slack履歴md の保守・GD書類の既読索引**を担う。
-- **GD書類は“一度読んだら既読”**、コアmdには**索引（名前・日付・種別＋要点）**だけ（欲張らない）。**Slack要約md は別ファイル＋時系列履歴**。
-- ワーカーは要約しない＝**digest.md を読むだけ**（トークン安定・時系列一貫）。
-- `_ai/` は digest と **report 版履歴（§5）**の両方を収容する AI 管理フォルダ。
+## 7. 案件ダイジェスト統合（役割分担）— D-DIGEST / Phase D1 実装・E2E済（2026-06-20）
+- **要約“計算”は VM AI ワーカーに一本化**（GAS の Claude API 直叩きをやめる）。GAS は継ぎ目（Slack/JUST.DB トリガー・増分スレ本文の取得・トピック更新）に専念。ジョブ＝Supabase `case_digest_jobs`（GAS が投入／VM が claim）。
+- **生成物の書き戻し＝ワーカーが Drive へ直書き（Option A）**：`_ai/` を find-or-create し `digest.md`(コア) と `slack-summary-history.md`(時系列履歴) を upsert。トピック要約は `case_digest_jobs.result_summary` へ書き、GAS がポーリングして反映（IAP 越え不要）。
+  - 当初は report-app「口」`/api/case-digest` 経由を想定したが、**統合（直）Cloud Run IAP がプログラム的 OIDC audience を受け付けない**（VM から実測：run.app URL／ブラウザ共有クライアント／プロジェクト所有 OAuth クライアント等すべて `Invalid JWT audience`）→ Option A に切替（D-DIGEST 追補）。digest は **AI 所有・人非接触**で「口一本」の監査根拠が薄く、ワーカー直書きで十分。「口」は GET 読取り／非VM producer 用に存置。
+- **GD書類は“一度読んだら既読”**：digest.md 末尾の機械可読マーカー `<!-- digest-read-doc-ids: … -->` に既読 fileId を保持し、**未読のみ新規に読む**（トークン安定・D-DIGEST「欲張らない」）。コアmdには索引（名前・日付・種別＋要点）だけ。
+- **2つのワーカー役割を区別**：①写真報告ワーカー＝digest.md を**読むだけ**（要約しない）。②ダイジェストワーカー＝Slack増分＋未読書類を**マージ要約して digest.md を書く**。両者は同一 VM プロセス・同一 Drive ヘルパ（写真優先→無ければ digest を1件、の相乗りループ）。
+- `_ai/` は digest（本節）と **report 版履歴（§5）**の両方を収容する AI 管理フォルダ。**版履歴の書き手は report-app のみ**（§5・§8。人が著者・append-only・監査対象）。
 
 ## 8. デプロイ・セキュリティ
 - report-app＝Cloud Run＋**IAP（@seibu-s.co.jp 限定 SSO）**。秘密は Cloud Run env。
 - **Drive 認証＝mgmt-strat の OAuth**（案件フォルダは mgmt-strat 所有ツリー配下→他者所有写真も継承で読める。DWD不要）。
-  - report-app は **`drive` full（RW）**＝版スナップショット・「口」の書込み用。**ワーカーは `drive.readonly` 据置**。
-- VM ワーカーは Drive直読み（IAP越え不可のため）。Claude は **Team/API 認証必須**（D-AIDATA）。
+  - report-app は **`drive` full（RW）**＝版スナップショット・「口」の書込み用。
+  - **ワーカーは `drive`(RW)**（2026-06-20・Phase D1〜）：写真/書類の読みに加え、digest 生成物（`_ai/digest.md`・履歴 md＝AI所有・人非接触）の直書きに使う。report-app と同一の mgmt-strat RW トークンを流用（新規同意不要）。**版スナップショットの書き手は引き続き report-app のみ**。
+- VM ワーカーは Drive直アクセス（IAP越え不可のため＝統合 Cloud Run IAP がプログラム的 audience 非対応・実測確定）。Claude は **Team/API 認証必須**（D-AIDATA）。
 - 顧客写真を Claude に渡すのは D-AIDATA で許可（学習不使用の閉空間＝Team/API）。
 - hub-gas Script Properties：`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `PHOTO_REPORT_TESTERS`（テスト中はテスター以外のボタン押下を即 return）。
 
@@ -140,7 +142,8 @@
   - **注記（§6）**＝`PhotoAnnotator`：写真上の透明SVG＋Pointer Events（マウス/指/ペン）。赤丸/囲み/矢印/線/手書き/テキスト、色、選択/削除、UNDO/REDO（配列）。座標は0〜1正規化（実表示boxをResizeObserverで測り均一px空間で描画＝歪まない）。注記は report JSON の一部＝版に同梱・ロールバックで一緒に戻る。
   - 書くのは report-app（RWトークン）。ワーカーは readonly 据置。**ブラウザ確認済（2026-06-19）**：保存→v0001/v0002 生成、版一覧、ロールバック。版名/削除は実装直後（要通し）。
 - ✅ **設定モーダル＋PDF体裁（2026-06-19）**：`photo_report_settings`（種類/実施日/物件名/担当者/トーン4種）＋⚙️設定モーダル＋「AIで再作成」(`/api/photo-report/{settings,generate}`)。ワーカーが設定をプロンプト反映（見出し≤20・`workItems` 生成）。印刷を齋藤マンション様 PDF 体裁（表紙/番号付きグリッド/概要・内容・免責）に。**残＝Slack「⚙️設定」のURL導線・物件名のJUST.DB取得**。
-- ⬜ **ダイジェスト“生成”**（最終融合・IAP 解決）。
+- ✅ **ダイジェスト“生成” Phase D1（worker側・2026-06-20 実装/E2E済）**：`case_digest_jobs` 投入 → VM ワーカーが未読書類＋Slack増分をマージ要約 → **`_ai/digest.md`・`slack-summary-history.md` を Drive 直書き（Option A）**＋トピック要約を `result_summary` へ。専用テストフォルダで E2E 検証（digest.md 整形・既読マーカー round-trip・履歴追記・2キュー相乗り）。IAP は B案断念で越えない。
+- ⬜ **ダイジェスト Phase D2（GAS切替）**：`topic-digest-gas` の Claude API 直叩きを撤去し、増分本文を `case_digest_jobs` へ投入→`result_summary` をポーリングしてトピック更新（フラグ並走で安全切替・API 課金停止）。
 
 ## 11. 決定ログ（要点）
 - **D-AIDATA**：顧客データは Team/API（閉空間）へなら渡してよい。
@@ -153,4 +156,4 @@
 - **PDF はシステム非責務**（人が任意で印刷）。複数報告書の管理も人の運用。
 - **トピック報告書レジストリ/モーダルは作らない**（到達導線は完了返信1本で足りる）。
 - **赤丸＝写真不変・JSON重ね描き（SVG/正規化座標）**。版管理に同梱。
-- **ダイジェスト＝要約はdigest-gas／永続の「口」はreport-app側**（責務分離）。GD書類は既読化＋索引。
+- **ダイジェスト＝要約“計算”はVMワーカー（GASのAPI直叩き廃止）**／**生成物の書き戻しはワーカーが Drive 直書き（Option A・D-DIGEST追補）**＝統合Cloud Run IAPがプログラム的audience非対応のため「口」経由を断念。GD書類は既読マーカーで増分読み＋索引。版スナップショットの書き手はreport-appのみ（不変）。

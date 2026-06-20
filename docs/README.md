@@ -2,9 +2,10 @@
 
 西武消毒の防除作業報告書アプリの仕様・設計の入口。
 
-## 現在地（2026-06-19）
+## 現在地（2026-06-20）
 
 - **Slack写真→AI写真報告書システム**（本丸）：Slack「📸報告書」→AI下書き→WEBで仕上げ（赤丸・版管理・版名・削除）まで **Cloud Run＋IAP で prod 稼働**。**設定モーダル＋AIトーン＋PDF体裁**（齋藤マンション様 PDF 準拠）実装済。VM ワーカー（systemd 常駐）。正本＝`architecture/slack-photo-report-architecture.md`。
+- **案件ダイジェスト生成 Phase D1（2026-06-20・E2E済）**：`case_digest_jobs`→VM ワーカーが未読書類＋Slack増分をマージ要約→**`_ai/digest.md` を Drive 直書き（Option A）**＋トピック要約。写真AIへ文脈(digest)を初供給。残＝Phase D2（既存 `topic-digest-gas` の API 直叩きを VM ジョブへ切替・課金停止）。
 - 紺谷V／写真報告書／融合のモック（`/mock`）：Supabase 接続・カスケード・ケース取得をライブ確認済（プレゼン可）。
 
 ## 1. 仕様（spec）

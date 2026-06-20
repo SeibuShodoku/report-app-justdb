@@ -1,16 +1,19 @@
 /**
- * 写真報告書 AI ワーカー（VM 常駐・フェーズ2 / 方式Y）。
+ * AI ワーカー（VM 常駐・方式Y）。2つのジョブ型を1プロセスで捌く（D-DIGEST）。
  *
- * 流れ（正本アーキ: docs/architecture/slack-photo-report-architecture.md / 実装計画: docs/spec/slack-photo-report-impl-plan.md §2）:
- *   1. Supabase `photo_report_jobs` の queued を1件 claim（processing 化）
- *   2. **Drive を直接読む**（mgmt-strat の OAuth refresh token・drive.readonly）。
- *      ＝案件フォルダ群は mgmt-strat 所有ツリー配下なので、他者所有の写真も継承で読める。
- *   3. **VM 上の Claude Code をヘッドレス起動**して report.json を書かせる（Team サブスク認証・APIキー不要）
- *   4. report.json を検証（zod）し `photo_reports` に upsert、ジョブを done に
- *   5. 失敗は error＋attempts++ で記録、ポーリング継続
+ * 正本アーキ: docs/architecture/slack-photo-report-architecture.md / 実装計画 §2 / 中央契約 contracts/case-digest/
  *
- * 方式Yの経緯: Cloud Run 直結IAP がヘッドレス用 audience(client_id) を露出しないため、
- *   worker は IAP 越しのプロキシではなく Drive を直読みする。IAP はブラウザ閲覧の保護として維持。
+ * (1) 写真報告 `photo_report_jobs`:
+ *   queued を claim → **Drive 直読み**で写真＋文脈(_ai/digest.md or PDF) → Claude Code(headless) で report.json
+ *   → zod 検証 → `photo_reports` に upsert → done。
+ * (2) 案件ダイジェスト `case_digest_jobs`（D-DIGEST / Phase D1）:
+ *   GAS が投入（増分スレ本文＋前回要約）→ GD書類を既読索引で増分読み＋マージ要約を Claude で生成
+ *   → **_ai/digest.md を Drive に直書き**（＋ slack-summary-history.md 追記）→ トピック要約を job.result_summary へ → done。
+ *
+ * Drive 認証＝mgmt-strat の OAuth refresh token。**drive（RW）**：写真/書類の読みに加え、
+ *   digest 生成物（AI所有・人非接触）の `_ai/` 直書きに使う。案件群は mgmt-strat 所有ツリー配下なので継承で読める。
+ *   ※版スナップショット（人が著者・append-only）の書き手は引き続き report-app「口」一本（写真側の原則は不変）。
+ * 方式Yの経緯: Cloud Run 直結IAP がプログラム的 audience を受けないため（実測確定）、worker は IAP を越えず Drive 直アクセス。
  *
  * 実行（VM）: 必要 env を入れて `node worker/photo-report-worker.mjs`（詳細は worker/README.md）。
  */
@@ -33,6 +36,7 @@ const MAX_ATTEMPTS = Number(process.env.MAX_ATTEMPTS ?? "8"); // 試行上限。
 const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS ?? "300000");
 const TOKEN_URI = "https://oauth2.googleapis.com/token";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
+const UPLOAD_API = "https://www.googleapis.com/upload/drive/v3"; // ダイジェスト直書き（media/multipart）用
 
 function req(name) {
   const v = process.env[name];
@@ -224,6 +228,91 @@ async function readCaseDigest(folderId) {
     if (md && md.trim()) return md;
   }
   return null;
+}
+
+// --- Drive 書込み（ダイジェスト直書き・RW token / Option A） ---
+// digest.md・slack-summary-history.md は AI 所有の生成物。report-app「口」と同じ _ai/ に同じ形式で書く
+//（口は閲覧/他consumer用に存置。書き手が二者になるがファイルは upsert で冪等）。
+async function findChildId(parentId, name, mimeType) {
+  const token = await getDriveToken();
+  let q = `'${parentId.replace(/'/g, "\\'")}' in parents and name = '${name.replace(/'/g, "\\'")}' and trashed = false`;
+  if (mimeType) q += ` and mimeType = '${mimeType}'`;
+  const r = await fetch(`${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) throw new Error(`Drive files.list(child) ${r.status}`);
+  return (await r.json()).files?.[0]?.id ?? null;
+}
+async function ensureSubfolderRW(parentId, name) {
+  const existing = await findChildId(parentId, name, "application/vnd.google-apps.folder");
+  if (existing) return existing;
+  const token = await getDriveToken();
+  const res = await fetch(`${DRIVE_API}/files?fields=id&supportsAllDrives=true`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] })
+  });
+  if (!res.ok) throw new Error(`Drive folder作成 ${res.status}: ${await res.text()}`);
+  return (await res.json()).id;
+}
+/** 既存なら media 更新、無ければ multipart 作成。fileId を返す。 */
+async function upsertTextFileRW(folderId, name, content, mimeType = "text/markdown") {
+  const token = await getDriveToken();
+  const existing = await findChildId(folderId, name);
+  if (existing) {
+    const res = await fetch(`${UPLOAD_API}/files/${existing}?uploadType=media&supportsAllDrives=true`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": mimeType },
+      body: content
+    });
+    if (!res.ok) throw new Error(`Drive 内容更新 ${res.status}: ${await res.text()}`);
+    return existing;
+  }
+  const boundary = "b" + Date.now();
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify({ name, parents: [folderId] }) +
+    `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n` +
+    content +
+    `\r\n--${boundary}--`;
+  const res = await fetch(`${UPLOAD_API}/files?uploadType=multipart&fields=id&supportsAllDrives=true`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body
+  });
+  if (!res.ok) throw new Error(`Drive ファイル作成 ${res.status}: ${await res.text()}`);
+  return (await res.json()).id;
+}
+/** Slack要約履歴の追記（report-app src/lib/case-digest.ts のミラー）。 */
+function appendSlackHistory(existing, entry, isoTime) {
+  const head = "# Slack要約 履歴（AI自動・編集禁止）\n";
+  const block = `\n---\n## ${isoTime}\n\n${entry.trim()}\n`;
+  if (!existing || !existing.trim()) return head + block;
+  return existing.replace(/\s+$/, "") + "\n" + block;
+}
+
+// --- ダイジェスト生成の入出力 ---
+const DIGEST_FILE = "digest.md";
+const SLACK_HISTORY_FILE = "slack-summary-history.md";
+const READ_MARKER = /<!--\s*digest-read-doc-ids:\s*([^>]*)-->/i;
+const MAX_DIGEST_DOCS = Number(process.env.MAX_DIGEST_DOCS ?? "6"); // 1回に新規で読む書類上限（既読は再読しない）
+
+// Claude が書き出すダイジェスト生成物。
+const digestOutSchema = z.object({
+  digestMarkdown: z.string().min(1).max(20000), // _ai/digest.md 本文（時系列要約＋既読索引）
+  topicSummary: z.string().min(1).max(2000) // トピック備考用の短い要約（GAS が反映）
+});
+
+/** digest.md 末尾マーカーから既読 docId 集合を取り出す。 */
+function parseReadDocIds(md) {
+  if (!md) return [];
+  const m = md.match(READ_MARKER);
+  if (!m) return [];
+  return m[1].split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+}
+/** digest.md に既読 docId マーカーを（重複なく）載せ直す。本文側の索引文は Claude が書く。 */
+function withReadDocIdsMarker(md, ids) {
+  const uniq = [...new Set(ids)].filter(Boolean);
+  const body = md.replace(READ_MARKER, "").replace(/\s+$/, "");
+  return `${body}\n\n<!-- digest-read-doc-ids: ${uniq.join(",")} -->\n`;
 }
 
 // --- Supabase REST ---
@@ -443,17 +532,131 @@ async function processJob(job) {
   }
 }
 
+// --- 案件ダイジェスト生成ジョブ（case_digest_jobs / D-DIGEST・Phase D1） ---
+async function claimDigestJob() {
+  const queued = await sb("GET", "case_digest_jobs?status=eq.queued&order=created_at.asc&limit=1&select=*");
+  if (!queued || queued.length === 0) return null;
+  const job = queued[0];
+  const claimed = await sb(
+    "PATCH",
+    `case_digest_jobs?id=eq.${job.id}&status=eq.queued`,
+    { status: "processing", attempts: (job.attempts ?? 0) + 1, updated_at: new Date().toISOString() },
+    { Prefer: "return=representation" }
+  );
+  if (!claimed || claimed.length === 0) return null; // 競合で他に取られた
+  return claimed[0];
+}
+
+async function finishDigestJob(id, patch) {
+  await sb("PATCH", `case_digest_jobs?id=eq.${id}`, { ...patch, updated_at: new Date().toISOString() });
+}
+
+function buildDigestPrompt(ctx, prevDigest, newDocNames, hasDelta, hasPrevSummary) {
+  return [
+    `案件「${ctx.folderName}」の【案件ダイジェスト】を更新します。社内向けの時系列要約で、後段のAI（写真報告など）と人が文脈把握に使います。`,
+    prevDigest
+      ? "このディレクトリの **prev-digest.md** が前回までのダイジェスト（正）。これを土台に増分だけ反映して更新（全部書き直さない）。"
+      : "前回ダイジェストはありません。新規に作成してください。",
+    newDocNames.length
+      ? `未読の案件書類PDF（${newDocNames.join(" / ")}）を置きました。**一度読んだら既読**として要点（対象生物・対策・経緯・金額感など）を織り込んでください。`
+      : "今回新規に読む書類はありません。",
+    hasDelta
+      ? "**slack-delta.txt** に前回以降のSlack増分があります。要点（依頼・調査結果・見積・日程・懸念）を時系列に反映してください。"
+      : "Slackの増分はありません。",
+    hasPrevSummary ? "**prev-summary.txt** は前回のトピック要約です。連続性を保ってください。" : "",
+    "【書き方】",
+    "・digestMarkdown：時系列ダイジェスト本文。『# 案件ダイジェスト』＋経緯の箇条書き＋末尾に『## 既読書類索引』（書類ごとに 名前・種別・日付・要点1行）。冗長にしない。",
+    "・topicSummary：Slackトピック備考用の短い要約（3〜6行・現況と次アクションが分かる粒度）。",
+    "出力は **このディレクトリに digest-out.json を1つ書き出す**こと。形式は厳密に次のJSONのみ:",
+    '{ "digestMarkdown": "…", "topicSummary": "…" }',
+    "JSON以外の文章はファイルに書かないこと。"
+  ].filter(Boolean).join("\n");
+}
+
+async function processDigestJob(job) {
+  if ((job.attempts ?? 0) > MAX_ATTEMPTS) {
+    await finishDigestJob(job.id, { status: "error", error: `再試行上限(${MAX_ATTEMPTS}回)に到達しました。` });
+    console.warn(`[digest skip] job=${job.id} attempts=${job.attempts} > ${MAX_ATTEMPTS}`);
+    return;
+  }
+  const dir = mkdtempSync(join(tmpdir(), `cd-${job.id}-`));
+  try {
+    const self = await getFileMeta(job.folder_id); // 案件フォルダ（_ai/ の親）
+    const allPdfs = (await listPdfs(job.folder_id)).filter((f) => !DOC_EXCLUDE.test(f.name));
+    const prevDigest = await readCaseDigest(job.folder_id);
+    if (prevDigest) writeFileSync(join(dir, "prev-digest.md"), prevDigest);
+    const readIds = parseReadDocIds(prevDigest);
+    // 未読のみ新規に読む（既読は再読しない＝トークン安定・D-DIGEST「欲張らない」）
+    const newDocs = allPdfs.filter((f) => !readIds.includes(f.id)).slice(0, MAX_DIGEST_DOCS);
+    const newDocNames = [];
+    for (let i = 0; i < newDocs.length; i++) {
+      const name = await downloadDoc(newDocs[i], dir, i);
+      if (name) newDocNames.push(name);
+    }
+    const hasDelta = !!(job.slack_delta && job.slack_delta.trim());
+    if (hasDelta) writeFileSync(join(dir, "slack-delta.txt"), job.slack_delta);
+    const hasPrevSummary = !!(job.prev_summary && job.prev_summary.trim());
+    if (hasPrevSummary) writeFileSync(join(dir, "prev-summary.txt"), job.prev_summary);
+
+    const prompt = buildDigestPrompt({ folderName: self.name }, prevDigest, newDocNames, hasDelta, hasPrevSummary);
+    const { stdout } = await runClaude(dir, prompt);
+
+    const outPath = join(dir, "digest-out.json");
+    let raw;
+    if (existsSync(outPath)) {
+      raw = readFileSync(outPath, "utf-8");
+    } else {
+      const fromStdout = extractJson(stdout);
+      if (fromStdout) {
+        raw = fromStdout;
+        console.warn(`[warn] digest job=${job.id}: digest-out.json 未生成→stdoutのJSONを採用`);
+      } else {
+        throw new Error(`digest-out.json が生成されませんでした。claude応答: ${String(stdout).trim().slice(0, 600)}`);
+      }
+    }
+    const out = digestOutSchema.parse(JSON.parse(raw));
+
+    // _ai/digest.md を直書き（既読マーカーは worker 側で確定して載せ直す）。
+    const aiFolderId = await ensureSubfolderRW(job.folder_id, AI_FOLDER_NAME);
+    const allReadIds = [...readIds, ...newDocs.map((f) => f.id)];
+    const md = withReadDocIdsMarker(out.digestMarkdown, allReadIds);
+    const digestFileId = await upsertTextFileRW(aiFolderId, DIGEST_FILE, md);
+    // Slack要約は時系列履歴へ追記（増分があった時のみ・トピックは上書きで消えるため md に残す）。
+    if (hasDelta) {
+      const existing = await readTextByNameRO(aiFolderId, SLACK_HISTORY_FILE);
+      const next = appendSlackHistory(existing, out.topicSummary, new Date().toISOString());
+      await upsertTextFileRW(aiFolderId, SLACK_HISTORY_FILE, next);
+    }
+    await finishDigestJob(job.id, {
+      status: "done",
+      error: null,
+      result_summary: out.topicSummary,
+      digest_file_id: digestFileId
+    });
+    console.log(`[digest done] job=${job.id} case=${job.case_id} folder=${job.folder_id} newDocs=${newDocNames.length} delta=${hasDelta ? "yes" : "no"}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await finishDigestJob(job.id, { status: "error", error: message.slice(0, 1000) });
+    console.error(`[digest error] job=${job.id}: ${message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 async function loop() {
-  console.log(`photo-report-worker(方式Y/Drive直読み) 起動。interval=${POLL_INTERVAL_MS}ms`);
+  console.log(`ai-worker(方式Y/Drive直読み・写真+ダイジェスト) 起動。interval=${POLL_INTERVAL_MS}ms`);
   for (;;) {
     try {
-      const job = await claimJob();
-      if (job) await processJob(job);
-      else await sleep(POLL_INTERVAL_MS);
+      // 写真報告を優先（人が待つUI起点）。無ければダイジェスト生成を1件。どちらも無ければ待つ。
+      const photo = await claimJob();
+      if (photo) { await processJob(photo); continue; }
+      const digest = await claimDigestJob();
+      if (digest) { await processDigestJob(digest); continue; }
+      await sleep(POLL_INTERVAL_MS);
     } catch (e) {
       console.error("[loop] ", e instanceof Error ? e.message : e);
       await sleep(POLL_INTERVAL_MS);

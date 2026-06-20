@@ -1,7 +1,7 @@
 # 写真報告書 自動生成（Slack 起点）実装計画書 v0.2
 
 最終更新：2026-06-19
-状態：**Phase 1/2/3 prod稼働。Phase4 版管理・注記＋版名/削除/本人制限＝ブラウザE2E済。Phase5 堅牢化（systemd・attempts上限・監査・D-PORTS契約）＝完了。Phase6 設定モーダル＋PDF体裁＝実装/静的検証済（要 migration 適用＋通し）。残＝要約生成(IAP)・JUST.DB本接続(予算)**
+状態：**Phase 1/2/3 prod稼働。Phase4 版管理・注記＝ブラウザE2E済。Phase5 堅牢化＝完了。Phase6 設定モーダル＋PDF体裁＝実装済（migration 適用済 2026-06-20）。Phase D1 案件ダイジェスト生成＝実装/E2E済 2026-06-20（Option A・worker 直書き）。残＝Phase D2（digest-gas を VM ジョブへ切替・API課金停止）・JUST.DB本接続(予算)**
 対象仕様（正本）：`../architecture/slack-photo-report-architecture.md`（本書はその実装手順）
 
 ## 0. 方針
@@ -85,18 +85,18 @@
 
 ## フェーズ 2.5：案件ダイジェスト統合（「口」）
 
-詳細＝`../architecture/slack-photo-report-architecture.md` §4。要約は digest-gas に一本化、**永続の「口」は report-app 側**。
+詳細＝`../architecture/slack-photo-report-architecture.md` §7。要約“計算”は **VM ワーカーに一本化**、生成物は **ワーカーが Drive 直書き（Option A・D-DIGEST追補）**。
 
-- [x] **Drive 書込スコープ準備**：`drive` full の refresh token を発行し Cloud Run の `GOOGLE_DRIVE_REFRESH_TOKEN` に設定（rev00002）。VMはreadonly据置。フォルダ作成→md書込→削除のドライラン成功。
-- [x] **「口」API（report-app）**：`POST/GET /api/case-digest`＋`src/lib/drive-write.ts`/`case-digest.ts`。AI専用サブフォルダ(`_ai`・env変更可)を find-or-create、`digest.md` upsert、`slack-summary-history.md` 時系列追記。書込はサーバー間(x-proxy-secret)のみ。実機でDrive操作検証済(冪等・更新同一id・履歴順)。
-- [ ] **GD書類の既読索引**：書類は一度読んだら既読化し、コアmdに索引（名前/日付/種別＋要点）だけ持つ（欲張らない）。
-- [ ] **マッピング**：JUST.DB案件一覧（GOOGLE_DRIVE_URL / SLACK_THREAD_TS / SLACK_CHANNEL_ID / 案件ID）で案件↔フォルダ↔スレッドを解決。
-- [ ] **digest-gas 連携**：digest-gas（本番GAS・cron）が要約を「口」へ渡す。**加点的・ガード付き**で（既存トピック要約を壊さない）。
-- [x] **ワーカー切替**：`_ai/digest.md` を folder_id→親 の順に Drive 直読みし、あれば文脈に（PDF選読省略）。無ければPDF方式へフォールバック（commit `feb2f58`）。実機検証：digest=yes/docs=0、出力がダイジェストの時系列（クマネズミ年間管理 第1回・前回からの経緯）に忠実。
-- [ ] **残り＝ダイジェストの“生成”**：現状コアmdの中身を自動生成する者がいない（テストは手書き）。生成＝digest-gas(Slackスレ要約)＋GD書類索引→口へPOST。これが「最終融合」(IAP解決が要・後回し)。
+- [x] **Drive 書込スコープ準備**：`drive` full の refresh token を発行し Cloud Run の `GOOGLE_DRIVE_REFRESH_TOKEN` に設定（rev00002）。**2026-06-20：同 RW トークンを VM ワーカーへ流用**（digest 直書き用。RW を tokeninfo で確認）。
+- [x] **「口」API（report-app）**：`POST/GET /api/case-digest`＋`src/lib/drive-write.ts`/`case-digest.ts`。実機でDrive操作検証済。※生成の書き戻しには使わない（IAP 非対応のため Option A）。GET 読取／非VM producer 用に存置。
+- [x] **GD書類の既読索引**：digest.md 末尾マーカー `<!-- digest-read-doc-ids: … -->` で既読 fileId を保持し未読のみ新規に読む（`parseReadDocIds`/`withReadDocIdsMarker`）。
+- [ ] **マッピング**：JUST.DB案件一覧（GOOGLE_DRIVE_URL / SLACK_THREAD_TS / SLACK_CHANNEL_ID / 案件ID）で案件↔フォルダ↔スレッドを解決（Phase D2 で GAS が使う）。
+- [x] **ワーカー切替（写真側）**：`_ai/digest.md` を folder_id→親 の順に Drive 直読みし、あれば文脈に（commit `feb2f58`）。実機検証済。
+- [x] **ダイジェスト“生成”＝Phase D1（2026-06-20・E2E済）**：ジョブ `case_digest_jobs` → VM ワーカー（`processDigestJob`）が未読書類＋`slack_delta` をマージ要約 → **`_ai/digest.md`・`slack-summary-history.md` を直書き**＋`result_summary`。専用テストフォルダで検証（整形・既読マーカー・履歴・2キュー相乗り）。
+- [ ] **Phase D2＝digest-gas 切替**：`topic-digest-gas` の Claude API 直叩きを撤去し `case_digest_jobs` へ投入→`result_summary` でトピック更新（フラグ並走・API 課金停止）。
 - [ ] **注意**：AI専用フォルダの mgmt 限定 ACL は、親フォルダ共有の継承との兼ね合いを実機確認して詰める。
 
-> **M2.5**：ある案件で「口」を叩く → AI専用フォルダにコアmd が出来る → ワーカーがそれを文脈に使い、より正確な report JSON を生成。
+> **M2.5（達成・D1）**：ジョブ投入 → AI専用フォルダに digest.md が生成 → 写真ワーカーがそれを文脈に使い、より正確な report JSON を生成。
 
 ---
 

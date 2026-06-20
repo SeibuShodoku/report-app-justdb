@@ -1,12 +1,14 @@
-# photo-report-worker（写真報告書 AI ワーカー・フェーズ2）
+# AI ワーカー（写真報告＋案件ダイジェスト・VM 常駐）
 
-VM 常駐で動かす。queued ジョブを拾い、**Drive を直接読み**（mgmt-strat の OAuth・drive.readonly）、
-**VM の Claude Code をヘッドレス起動**して `report.json` を書かせ、検証して Supabase `photo_reports` に保存する。
+VM 常駐で動かす。**2つのジョブ型を1プロセスで捌く**（D-DIGEST）。Drive は **mgmt-strat の OAuth `drive`(RW)** で直接アクセス。
 
-- 仕様/計画: `../docs/architecture/slack-photo-report-architecture.md`（正本）/ `../docs/spec/slack-photo-report-impl-plan.md` §2・§6
-- スキーマDDL（先に適用）: `../docs/supabase/slack-photo-report-schema.sql`
-- **方式Y**：Cloud Run 直結IAP がヘッドレス用 audience を露出しないため、worker は IAP 越しプロキシではなく Drive 直読み。
-  案件フォルダは mgmt-strat 所有ツリー配下なので、他者所有の写真も継承で読める（DWD不要）。
+- **写真報告 `photo_report_jobs`**：写真＋文脈(_ai/digest.md or PDF) を読み、Claude Code(headless) で `report.json` を生成 → Supabase `photo_reports` に保存。
+- **案件ダイジェスト `case_digest_jobs`（Phase D1）**：GAS が投入（`slack_delta`＋`prev_summary`）→ 未読書類＋Slack増分をマージ要約 → **`_ai/digest.md`・`slack-summary-history.md` を Drive 直書き（Option A）**＋トピック要約を `result_summary` へ。
+  - ループは写真優先→無ければ digest を1件。`drive`(RW) は digest 直書き用（**版スナップショットの書き手は report-app のみ**＝据置）。
+
+- 仕様/計画: `../docs/architecture/slack-photo-report-architecture.md`（正本・§7）/ `../docs/spec/slack-photo-report-impl-plan.md` §2・§6 / 中央契約 `../../contracts/case-digest/`
+- スキーマDDL（先に適用）: `../docs/supabase/slack-photo-report-schema.sql`＋`../docs/supabase/migrations/20260620003000_create_case_digest_jobs.sql`
+- **方式Y**：Cloud Run 直結IAP がヘッドレス用 audience を露出しない（統合IAPはプログラム的 audience を受けない＝実測確定）ため、worker は IAP 越しプロキシではなく Drive 直アクセス。案件フォルダは mgmt-strat 所有ツリー配下なので継承で読める（DWD不要）。
 - Claude は **VM の Team サブスク認証**で動く（追加 APIキー不要・D-AIDATA）。
 
 ## 必要 env
@@ -14,14 +16,15 @@ VM 常駐で動かす。queued ジョブを拾い、**Drive を直接読み**（
 ```
 SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
-GOOGLE_CLIENT_ID=...                    # report-app の .env.local と同値（Drive読取OAuth）
+GOOGLE_CLIENT_ID=...                    # report-app と同値
 GOOGLE_CLIENT_SECRET=...
-GOOGLE_DRIVE_REFRESH_TOKEN=...          # mgmt-strat・drive.readonly
+GOOGLE_DRIVE_REFRESH_TOKEN=...          # mgmt-strat・drive(RW)。report-app の RW トークンを流用（digest 直書き用）
 # 任意
 CLAUDE_BIN=claude
 POLL_INTERVAL_MS=15000
 MAX_PHOTOS=60
 MAX_CONTEXT_DOCS=5
+MAX_DIGEST_DOCS=6     # ダイジェスト1回で新規に読む未読書類の上限（既読は再読しない）
 CLAUDE_TIMEOUT_MS=300000
 MAX_ATTEMPTS=8        # 試行上限。到達ジョブは Claude を回さず error 確定（暴走防止）
 ```
