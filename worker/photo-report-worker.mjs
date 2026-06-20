@@ -6,9 +6,11 @@
  * (1) 写真報告 `photo_report_jobs`:
  *   queued を claim → **Drive 直読み**で写真＋文脈(_ai/digest.md or PDF) → Claude Code(headless) で report.json
  *   → zod 検証 → `photo_reports` に upsert → done。
- * (2) 案件ダイジェスト `case_digest_jobs`（D-DIGEST / Phase D1）:
- *   GAS が投入（増分スレ本文＋前回要約）→ GD書類を既読索引で増分読み＋マージ要約を Claude で生成
- *   → **_ai/digest.md を Drive に直書き**（＋ slack-summary-history.md 追記）→ トピック要約を job.result_summary へ → done。
+ * (2) 案件ダイジェスト `case_digest_jobs`（D-DIGEST / Phase D1→D2 統一正本モデル）:
+ *   GAS が投入（構造化Slack増分＋前回備考）→ GD書類を既読索引で増分読み＋増分を畳み込み Claude で生成
+ *   → **_ai/digest.md を Drive に直書き**（重要情報＋経緯＋既読索引／既読docs・吸収済tsの2カーソル同居）
+ *   ＋ slack-summary-history.md 追記 → **固定的重要情報カードを job.result_summary**・吸収済tsを absorbed_ts へ
+ *   → 生Slack(slack_delta)を破棄(null) → done。GAS は done をポーリングして備考を chat.update。
  *
  * Drive 認証＝mgmt-strat の OAuth refresh token。**drive（RW）**：写真/書類の読みに加え、
  *   digest 生成物（AI所有・人非接触）の `_ai/` 直書きに使う。案件群は mgmt-strat 所有ツリー配下なので継承で読める。
@@ -293,16 +295,18 @@ function appendSlackHistory(existing, entry, isoTime) {
   return existing.replace(/\s+$/, "") + "\n" + block;
 }
 
-// --- ダイジェスト生成の入出力 ---
+// --- ダイジェスト生成の入出力（D2：統一正本モデル） ---
 const DIGEST_FILE = "digest.md";
 const SLACK_HISTORY_FILE = "slack-summary-history.md";
-const READ_MARKER = /<!--\s*digest-read-doc-ids:\s*([^>]*)-->/i;
+const READ_MARKER = /<!--\s*digest-read-doc-ids:\s*([^>]*)-->/i;       // digest.md 末尾：既読書類IDカーソル
+const ABSORBED_TS_MARKER = /<!--\s*slack-absorbed-ts:\s*([^>]*)-->/i;  // digest.md 末尾：吸収済 Slack ts カーソル
+const DELTA_TS_MARKER = /<!--\s*delta-through-ts:\s*([^>]*)-->/i;       // slack_delta 末尾：GAS が付すこの増分の最終 ts
 const MAX_DIGEST_DOCS = Number(process.env.MAX_DIGEST_DOCS ?? "6"); // 1回に新規で読む書類上限（既読は再読しない）
 
 // Claude が書き出すダイジェスト生成物。
 const digestOutSchema = z.object({
-  digestMarkdown: z.string().min(1).max(20000), // _ai/digest.md 本文（時系列要約＋既読索引）
-  topicSummary: z.string().min(1).max(2000) // トピック備考用の短い要約（GAS が反映）
+  digestMarkdown: z.string().min(1).max(20000),  // _ai/digest.md 本文（重要情報＋経緯＋既読索引）
+  importantInfoCard: z.string().min(1).max(2000) // トピック備考用の「固定的な重要情報カード」（GAS が反映＝result_summary）
 });
 
 /** digest.md 末尾マーカーから既読 docId 集合を取り出す。 */
@@ -312,11 +316,25 @@ function parseReadDocIds(md) {
   if (!m) return [];
   return m[1].split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
 }
-/** digest.md に既読 docId マーカーを（重複なく）載せ直す。本文側の索引文は Claude が書く。 */
-function withReadDocIdsMarker(md, ids) {
-  const uniq = [...new Set(ids)].filter(Boolean);
-  const body = md.replace(READ_MARKER, "").replace(/\s+$/, "");
-  return `${body}\n\n<!-- digest-read-doc-ids: ${uniq.join(",")} -->\n`;
+/** digest.md 末尾マーカーから吸収済 Slack ts を取り出す（無ければ null）。 */
+function parseSlackAbsorbedTs(md) {
+  if (!md) return null;
+  const m = md.match(ABSORBED_TS_MARKER);
+  return m && m[1].trim() ? m[1].trim() : null;
+}
+/** slack_delta 末尾の delta-through-ts（GAS が付すこの増分の最終 ts）を取り出す。 */
+function parseDeltaThroughTs(delta) {
+  if (!delta) return null;
+  const m = delta.match(DELTA_TS_MARKER);
+  return m && m[1].trim() ? m[1].trim() : null;
+}
+/** digest.md 末尾に2カーソル（既読docs・吸収済ts）を載せ直す。本文側の索引文は Claude が書く。 */
+function withTailMarkers(md, readIds, absorbedTs) {
+  const uniq = [...new Set(readIds)].filter(Boolean);
+  const body = md.replace(READ_MARKER, "").replace(ABSORBED_TS_MARKER, "").replace(/\s+$/, "");
+  const lines = [`<!-- digest-read-doc-ids: ${uniq.join(",")} -->`];
+  if (absorbedTs) lines.push(`<!-- slack-absorbed-ts: ${absorbedTs} -->`);
+  return `${body}\n\n${lines.join("\n")}\n`;
 }
 
 // --- Supabase REST ---
@@ -557,22 +575,32 @@ async function finishDigestJob(id, patch) {
 
 function buildDigestPrompt(ctx, prevDigest, newDocNames, hasDelta, hasPrevSummary) {
   return [
-    `案件「${ctx.folderName}」の【案件ダイジェスト】を更新します。社内向けの時系列要約で、後段のAI（写真報告など）と人が文脈把握に使います。`,
+    `案件「${ctx.folderName}」の【案件ダイジェスト digest.md】を更新します。これは案件知識の正本（AI製・人非接触）で、写真報告など後段のAIと人が文脈把握に使います。`,
     prevDigest
-      ? "このディレクトリの **prev-digest.md** が前回までのダイジェスト（正）。これを土台に増分だけ反映して更新（全部書き直さない）。"
+      ? "このディレクトリの **prev-digest.md** が前回までのダイジェスト（正）。これを土台に増分だけ反映して更新（全部書き直さない・既存の重要情報は消さない）。"
       : "前回ダイジェストはありません。新規に作成してください。",
     newDocNames.length
-      ? `未読の案件書類PDF（${newDocNames.join(" / ")}）を置きました。**一度読んだら既読**として要点（対象生物・対策・経緯・金額感など）を織り込んでください。`
+      ? `未読の案件書類PDF（${newDocNames.join(" / ")}）を置きました。**一度読んだら既読**として要点を織り込んでください。`
       : "今回新規に読む書類はありません。",
     hasDelta
-      ? "**slack-delta.txt** に前回以降のSlack増分があります。要点（依頼・調査結果・見積・日程・懸念）を時系列に反映してください。"
+      ? "**slack-delta.txt** に前回以降のSlack増分があります（各行に[話者名]・時刻・完了スタンプ等の文脈付き）。発言者を取り違えず、文脈で読み、時系列に反映してください。末尾の `<!-- … -->` は機械用メタなので無視。"
       : "Slackの増分はありません。",
-    hasPrevSummary ? "**prev-summary.txt** は前回のトピック要約です。連続性を保ってください。" : "",
-    "【書き方】",
-    "・digestMarkdown：時系列ダイジェスト本文。『# 案件ダイジェスト』＋経緯の箇条書き＋末尾に『## 既読書類索引』（書類ごとに 名前・種別・日付・要点1行）。冗長にしない。",
-    "・topicSummary：Slackトピック備考用の短い要約（3〜6行・現況と次アクションが分かる粒度）。",
-    "出力は **このディレクトリに digest-out.json を1つ書き出す**こと。形式は厳密に次のJSONのみ:",
-    '{ "digestMarkdown": "…", "topicSummary": "…" }',
+    hasPrevSummary ? "**prev-summary.txt** は前回のトピック備考（重要情報カード）です。連続性を保ってください。" : "",
+    "",
+    "【digest.md の構成（この4部・Markdown）】",
+    "1) `# 案件ダイジェスト：<案件名>`",
+    "2) `## 重要情報（固定）` — 後述の重要情報だけを箇条書き。恒久制約は更新が無くても残し続ける（消さない）。",
+    "3) `## 経緯（時系列）` — 調査/依頼/懸念などの時系列メモ（機械文脈用・人はここを常読しない）。",
+    "4) `## 既読書類索引` — 読んだ書類ごとに『名前（種別・日付）：要点1行』。",
+    "",
+    "【重要情報の定義】会話・資料にしか残らない定性情報だけを積み上げる台帳。",
+    "拾う：①決定事項（方針・やる/やらない・経緯と理由）②連絡先/担当の会話上の補足③顧客の要望・制約（鍵/駐車/立入時間帯/ペット/アレルギー/NG/特記）④現地特記（建物・搬入・危険箇所・アクセス）⑤宿題・約束(TODO)＋期限＋担当⑥トラブル/クレームと対応・結論⑦前提を覆す変更。",
+    "**拾わない（重要）：受注金額・見積・日程の確定/変更・受注/契約ステータス等、JUST.DB(台帳)やPCで引ける構造化データ。混ぜると重要度の質がぶれる。**",
+    "・資料由来の恒久制約（例：初期PDFの『平日は電話NG』）は**ずっと保持**する。",
+    "・完了スタンプ付きの宿題・連絡は『対応済み』と明記。前回と矛盾する新情報は上書き。",
+    "",
+    "【出力】このディレクトリに **digest-out.json を1つだけ**書き出すこと。形式は厳密に次のJSONのみ:",
+    '{ "digestMarkdown": "(digest.md 全文・上記4部)", "importantInfoCard": "(トピック備考に出す固定的重要情報カード。『重要情報（固定）』を“要約を見て要約”で短く整えた箇条書き。時系列にしない・構造化データを入れない)" }',
     "JSON以外の文章はファイルに書かないこと。"
   ].filter(Boolean).join("\n");
 }
@@ -590,6 +618,7 @@ async function processDigestJob(job) {
     const prevDigest = await readCaseDigest(job.folder_id);
     if (prevDigest) writeFileSync(join(dir, "prev-digest.md"), prevDigest);
     const readIds = parseReadDocIds(prevDigest);
+    const prevAbsorbedTs = parseSlackAbsorbedTs(prevDigest); // 前回までに吸収した Slack ts（カーソル）
     // 未読のみ新規に読む（既読は再読しない＝トークン安定・D-DIGEST「欲張らない」）
     const newDocs = allPdfs.filter((f) => !readIds.includes(f.id)).slice(0, MAX_DIGEST_DOCS);
     const newDocNames = [];
@@ -599,6 +628,9 @@ async function processDigestJob(job) {
     }
     const hasDelta = !!(job.slack_delta && job.slack_delta.trim());
     if (hasDelta) writeFileSync(join(dir, "slack-delta.txt"), job.slack_delta);
+    // GAS がこの増分の最終 ts を slack_delta 末尾に付す。畳み込んだら吸収済 ts を前進（無ければ据置）。
+    const deltaThroughTs = hasDelta ? parseDeltaThroughTs(job.slack_delta) : null;
+    const newAbsorbedTs = deltaThroughTs || prevAbsorbedTs;
     const hasPrevSummary = !!(job.prev_summary && job.prev_summary.trim());
     if (hasPrevSummary) writeFileSync(join(dir, "prev-summary.txt"), job.prev_summary);
 
@@ -620,24 +652,28 @@ async function processDigestJob(job) {
     }
     const out = digestOutSchema.parse(JSON.parse(raw));
 
-    // _ai/digest.md を直書き（既読マーカーは worker 側で確定して載せ直す）。
+    // コミット順序（クラッシュ安全・仕様 §4.1）：
+    // (a) _ai/digest.md を直書き（2カーソル＝既読docs・吸収済ts を worker 側で確定して載せ直す）。
     const aiFolderId = await ensureSubfolderRW(job.folder_id, AI_FOLDER_NAME);
     const allReadIds = [...readIds, ...newDocs.map((f) => f.id)];
-    const md = withReadDocIdsMarker(out.digestMarkdown, allReadIds);
+    const md = withTailMarkers(out.digestMarkdown, allReadIds, newAbsorbedTs);
     const digestFileId = await upsertTextFileRW(aiFolderId, DIGEST_FILE, md);
-    // Slack要約は時系列履歴へ追記（増分があった時のみ・トピックは上書きで消えるため md に残す）。
+    // (b) Slack要約は時系列履歴へ追記（増分があった時のみ・トピックは上書きで消えるため md に残す）。
     if (hasDelta) {
       const existing = await readTextByNameRO(aiFolderId, SLACK_HISTORY_FILE);
-      const next = appendSlackHistory(existing, out.topicSummary, new Date().toISOString());
+      const next = appendSlackHistory(existing, out.importantInfoCard, new Date().toISOString());
       await upsertTextFileRW(aiFolderId, SLACK_HISTORY_FILE, next);
     }
+    // (c) job を done に（重要情報カード=備考／吸収済ts／digest_file_id）。(d) 生Slackを破棄（短命・null）。
     await finishDigestJob(job.id, {
       status: "done",
       error: null,
-      result_summary: out.topicSummary,
-      digest_file_id: digestFileId
+      result_summary: out.importantInfoCard,
+      digest_file_id: digestFileId,
+      absorbed_ts: newAbsorbedTs,
+      slack_delta: null
     });
-    console.log(`[digest done] job=${job.id} case=${job.case_id} folder=${job.folder_id} newDocs=${newDocNames.length} delta=${hasDelta ? "yes" : "no"}`);
+    console.log(`[digest done] job=${job.id} case=${job.case_id} folder=${job.folder_id} newDocs=${newDocNames.length} delta=${hasDelta ? "yes" : "no"} absorbedTs=${newAbsorbedTs ?? "-"}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await finishDigestJob(job.id, { status: "error", error: message.slice(0, 1000) });

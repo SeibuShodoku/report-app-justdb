@@ -3,7 +3,9 @@
 VM 常駐で動かす。**2つのジョブ型を1プロセスで捌く**（D-DIGEST）。Drive は **mgmt-strat の OAuth `drive`(RW)** で直接アクセス。
 
 - **写真報告 `photo_report_jobs`**：写真＋文脈(_ai/digest.md or PDF) を読み、Claude Code(headless) で `report.json` を生成 → Supabase `photo_reports` に保存。
-- **案件ダイジェスト `case_digest_jobs`（Phase D1）**：GAS が投入（`slack_delta`＋`prev_summary`）→ 未読書類＋Slack増分をマージ要約 → **`_ai/digest.md`・`slack-summary-history.md` を Drive 直書き（Option A）**＋トピック要約を `result_summary` へ。
+- **案件ダイジェスト `case_digest_jobs`（Phase D1→D2 統一正本モデル）**：GAS が投入（構造化 `slack_delta`＋前回備考 `prev_summary`）→ 未読書類＋Slack増分を畳み込み、**`_ai/digest.md`（重要情報（固定）／経緯（時系列）／既読書類索引）を Drive 直書き（Option A）**。
+  - digest.md 末尾に**2カーソル同居**：既読書類ID `<!-- digest-read-doc-ids: … -->` ＋ 吸収済Slack ts `<!-- slack-absorbed-ts: … -->`（カーソルも AI 所有）。
+  - 出力 `result_summary`＝**固定的な重要情報カード**（GAS が備考に反映）。構造化データ（受注金額等）は除外。`absorbed_ts` を job に書き、**畳み込み後 `slack_delta` を null で破棄**（短命）。
   - ループは写真優先→無ければ digest を1件。`drive`(RW) は digest 直書き用（**版スナップショットの書き手は report-app のみ**＝据置）。
 
 - 仕様/計画: `../docs/architecture/slack-photo-report-architecture.md`（正本・§7）/ `../docs/spec/slack-photo-report-impl-plan.md` §2・§6 / 中央契約 `../../contracts/case-digest/`

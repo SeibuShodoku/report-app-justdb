@@ -88,7 +88,8 @@
 - **出力体裁（印刷=PDF・report-app の print CSS）**：表紙（種類タイトル「施工報告書/調査報告書」・{種類}実施日・{種類}現場・会社フッター＝城東支店定型＋担当者）→ **番号付き2列グリッド**（「N．見出し」のみ）→ 最終ページ（{種類}概要＝`headerSummary` / {種類}内容＝`workItems` 番号付き / **免責事項**＝定型 `lib/report-template.ts`）。PDF 生成はブラウザ印刷（システムは PDF を保管しない）。
 - 物件名の **JUST.DB ライブ取得**は API 予算（`open-issues §0`）が解けてから（当面モーダル手入力・将来 §3 Lane B の 1件 GET）。
 
-## 7. 案件ダイジェスト統合（役割分担）— D-DIGEST / Phase D1 実装・E2E済（2026-06-20）
+## 7. 案件ダイジェスト統合（役割分担）— D-DIGEST / Phase D1 実装・E2E済（2026-06-20）/ Phase D2 統一正本モデル（仕様確定・コード実装済／未切替）
+> **D2 統一正本モデル**：正本＝AI製 `digest.md`（重要情報（固定）／経緯（時系列）／既読書類索引）。生Slackは Supabase ジョブ `slack_delta` で渡す**短命データ**（畳み込み後 null 破棄）。**カーソルも AI 所有**＝既読書類ID＋吸収済 Slack ts を digest.md 末尾に同居（ジョブ `absorbed_ts` は GAS が読む写し）。**トピック備考＝固定的な重要情報カード**（`result_summary`・構造化データは除外）。GAS は要約せず **投入(enqueue)＋適用(apply)の2フェーズ I/O 専従**（`TOPIC_DIGEST_USE_VM` で旧経路と並走→撤去で API課金停止）。詳細＝中央契約 `contracts/case-digest/`。
 - **要約“計算”は VM AI ワーカーに一本化**（GAS の Claude API 直叩きをやめる）。GAS は継ぎ目（Slack/JUST.DB トリガー・増分スレ本文の取得・トピック更新）に専念。ジョブ＝Supabase `case_digest_jobs`（GAS が投入／VM が claim）。
 - **生成物の書き戻し＝ワーカーが Drive へ直書き（Option A）**：`_ai/` を find-or-create し `digest.md`(コア) と `slack-summary-history.md`(時系列履歴) を upsert。トピック要約は `case_digest_jobs.result_summary` へ書き、GAS がポーリングして反映（IAP 越え不要）。
   - 当初は report-app「口」`/api/case-digest` 経由を想定したが、**統合（直）Cloud Run IAP がプログラム的 OIDC audience を受け付けない**（VM から実測：run.app URL／ブラウザ共有クライアント／プロジェクト所有 OAuth クライアント等すべて `Invalid JWT audience`）→ Option A に切替（D-DIGEST 追補）。digest は **AI 所有・人非接触**で「口一本」の監査根拠が薄く、ワーカー直書きで十分。「口」は GET 読取り／非VM producer 用に存置。
@@ -143,7 +144,7 @@
   - 書くのは report-app（RWトークン）。ワーカーは readonly 据置。**ブラウザ確認済（2026-06-19）**：保存→v0001/v0002 生成、版一覧、ロールバック。版名/削除は実装直後（要通し）。
 - ✅ **設定モーダル＋PDF体裁（2026-06-19）**：`photo_report_settings`（種類/実施日/物件名/担当者/トーン4種）＋⚙️設定モーダル＋「AIで再作成」(`/api/photo-report/{settings,generate}`)。ワーカーが設定をプロンプト反映（見出し≤20・`workItems` 生成）。印刷を齋藤マンション様 PDF 体裁（表紙/番号付きグリッド/概要・内容・免責）に。**残＝Slack「⚙️設定」のURL導線・物件名のJUST.DB取得**。
 - ✅ **ダイジェスト“生成” Phase D1（worker側・2026-06-20 実装/E2E済）**：`case_digest_jobs` 投入 → VM ワーカーが未読書類＋Slack増分をマージ要約 → **`_ai/digest.md`・`slack-summary-history.md` を Drive 直書き（Option A）**＋トピック要約を `result_summary` へ。専用テストフォルダで E2E 検証（digest.md 整形・既読マーカー round-trip・履歴追記・2キュー相乗り）。IAP は B案断念で越えない。
-- ⬜ **ダイジェスト Phase D2（GAS切替）**：`topic-digest-gas` の Claude API 直叩きを撤去し、増分本文を `case_digest_jobs` へ投入→`result_summary` をポーリングしてトピック更新（フラグ並走で安全切替・API 課金停止）。
+- 🟡 **ダイジェスト Phase D2（統一正本モデル・GAS切替）＝コード実装済／未切替**：worker（digest.md 4部構成・2カーソル・重要情報カード=result_summary・absorbed_ts・slack_delta 破棄）＋ migration（absorbed_ts/applied_at）＋ GAS（`supabaseClient.gs`・`td_enqueueCase_`/`topicDigest_applyDone`・`TOPIC_DIGEST_USE_VM` 並走）を実装。残＝GAS push＋Script Properties＋フラグ並走 E2E→旧 `td_summarize_` 撤去＝API 課金停止。手順＝`contracts/case-digest/D2_IMPLEMENTATION_PLAN.md`。
 
 ## 11. 決定ログ（要点）
 - **D-AIDATA**：顧客データは Team/API（閉空間）へなら渡してよい。
