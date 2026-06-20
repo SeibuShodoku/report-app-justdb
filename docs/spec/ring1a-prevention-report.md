@@ -1,7 +1,7 @@
 # Ring 1a 仕様 — 防除作業報告書（紺谷V）の実体化
 
 最終更新：2026-06-20
-状態：**仕様ドラフト（着手前）**。北極星＝[`../vision/case-portal.md`](../vision/case-portal.md)（D-PORTAL）。現況アーキ＝[`../architecture/slack-photo-report-architecture.md`](../architecture/slack-photo-report-architecture.md)。
+状態：**実装済（WEB＋hub-gas・2026-06-20）／要デプロイ（Cloud Run 再デプロイ＋hub-gas clasp push）**。北極星＝[`../vision/case-portal.md`](../vision/case-portal.md)（D-PORTAL）。現況アーキ＝[`../architecture/slack-photo-report-architecture.md`](../architecture/slack-photo-report-architecture.md)。
 
 ## 0. スコープ
 リング1のうち **1a＝防除作業報告書(A・紺谷V)を「モックのみ」から「保存・版管理できる実フロー」へ**。
@@ -32,9 +32,9 @@
 
 ### D2. 起動と保管キー ＝ 写真報告書と同じ「Slackボタン → folder_id キー」（2026-06-20 確定）
 - **起動＝Slackボタン（写真と同一機構）**。案件スレッドの「報告書」ボタン → hub-gas が **案件↔フォルダ↔スレッドを解決**（写真で実装済み・JUST.DB案件一覧の GD URL 等）→ **署名付き起動トークンURL**で `/report/prevention?folderId=…&token=…` を開く。**report-app は JUST.DB を呼ばない**（folderId はトークンURLで受領＝予算ゼロ・写真と一貫）。
-- **キー＝folder_id（写真と同一機構を流用）**。防除はその訪問の**日付フォルダを写真と共有**し、版は `_ai/reports/<folder_id>/`（親案件フォルダの `_ai`）に **reportType で名前空間分離**（写真版＝既定、防除版＝`prevention`）。Supabase 現在版は **folder_id 主キー**（写真の `photo_reports` と別テーブル `prevention_reports`）。
+- **キー＝folder_id（写真と同一機構を流用）**。防除は案件配下に**自分の `防除_YYYYMMDD` サブフォルダ**（写真の `写真_` と並列・hub-gas が find-or-create）を持ち、版は `_ai/reports/<防除folder_id>/prevention/`（親案件フォルダの `_ai`・reportType 名前空間）。Supabase 現在版は **folder_id 主キー**（写真の `photo_reports` と別テーブル `prevention_reports`）。**実装＝別フォルダなので衝突せず**（deliverable_id も `reportType:folderId:v…` で写真と非衝突）。
 - **AIジョブ不要**：防除(紺谷V)は人が入力（カスケード＋手入力）。写真のような worker 生成・完了返信ループは無く、**ボタン→プリフィル空フォーム→保存(版)** だけ＝写真より単純。
-- 残る小論点：ボタンUX＝「報告書」1本で[写真][防除]を選ばせる vs 2ボタン（推し＝1本で選択）。共有時のフォルダ名（`報告_YYYYMMDD` 等）。
+- 確定：ボタンUX＝**「📋 報告書」1本→本人にエフェメラルで[📸写真][🛡️防除]選択**（実装済 `pr_menu`）。防除フォルダ名＝`防除_YYYYMMDD`。
 
 ### D3. スキーマ `preventionReportDraftSchema`（新規 `src/schemas/prevention-report.ts`）
 モック構造に対応：ヘッダ（reportDate/customer/site/manager/supervisor/worker）／施工日時／**施工内容 `workItems[]`**（pest・**chemical(使用薬剤)**・method・amount・note）／駆除作業報告 `reportText`／生息状況 `statusItems[]`／効果判定 `effectRating`。
@@ -73,7 +73,7 @@
 10. `src/app/api/report/confirm/route.ts` … 確定（公開）エンドポイント（report-type 共通）。
 
 **別リポ（justdb-hub-gas）**
-11. 案件スレッドの「報告書」起動を 写真/防除 両対応に：写真の `pr_start`/`pr_open` パターンを複製し、防除は **AIジョブ無し**で `/report/prevention?folderId=…&token=…` を発行（folder はその訪問の日付フォルダを共有）。ボタンUXは[写真][防除]選択 or 2ボタン。
+11. ✅ 案件スレッドの「📋報告書」(`pr_menu`)→エフェメラル[写真][防除]選択。防除は **AIジョブ無し**で `防除_YYYYMMDD` find-or-create→`/report/prevention?folderId&token` を本人発行（`pr_start_prevention`/`pr_open_prevention`）。写真の `pr_start`/`pr_open` パターンを複製・複製ボタンも同期。**実装済**（commit 45cb74f）。
 
 **任意・後**
 12. `/mock` 紺谷Vタブから本フローへの導線（保存ボタン）。
