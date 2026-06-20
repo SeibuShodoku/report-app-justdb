@@ -40,6 +40,8 @@ export const preventionReportDraftSchema = z
     supervisor: z.string().max(100).optional(), // 作業責任者
     worker: z.string().max(100).optional(), // 作業員
     workDate: z.string().max(40).optional(), // 施工日（当面手入力・表示用文字列）
+    timeFrom: z.string().max(20).optional(), // 作業開始時刻
+    timeTo: z.string().max(20).optional(), // 作業終了時刻
     // 施工内容（縦持ち）
     workItems: z.array(preventionWorkRowSchema).max(100).default([]),
     // 駆除作業報告（施工内容＋定型から生成・編集可。将来AI）

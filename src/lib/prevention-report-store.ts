@@ -26,7 +26,7 @@ import {
   parseVersionNumber,
   type ReportVersionSource
 } from "@/lib/report-versions";
-import { sbUpsert } from "@/lib/supabase-rest";
+import { sbSelect, sbUpsert } from "@/lib/supabase-rest";
 import { preventionReportDraftSchema, type PreventionReportDraft } from "@/schemas/prevention-report";
 
 export type SavedVersion = { version: number; fileName: string; savedAt: string };
@@ -50,6 +50,23 @@ async function resolvePreventionVersionsDir(
   const base = await resolveReportVersionsDir(folderId, create); // _ai/reports/<folderId>/
   if (!base) return null;
   return create ? ensureSubfolder(base, "prevention") : findSubfolder(base, "prevention");
+}
+
+/**
+ * Supabase `prevention_reports` の現在版（report_json）を読む（無ければ null）。プリフィル用。
+ * テーブル未作成・未設定でもフォールバックできるよう失敗は握りつぶす。
+ */
+export async function loadCurrentPreventionReport(
+  folderId: string
+): Promise<PreventionReportDraft | null> {
+  try {
+    const rows = await sbSelect<{ report_json: PreventionReportDraft }>(
+      `prevention_reports?folder_id=eq.${encodeURIComponent(folderId)}&select=report_json&limit=1`
+    );
+    return rows[0]?.report_json ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** 現在版を Supabase `prevention_reports` に上書き（folder_id キー）。 */
