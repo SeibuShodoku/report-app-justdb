@@ -34,6 +34,10 @@ const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? "15000");
 const MAX_PHOTOS = Number(process.env.MAX_PHOTOS ?? "60"); // 1回の生成に渡す写真上限（サブスク消費の暴発防止）
 const MAX_ATTEMPTS = Number(process.env.MAX_ATTEMPTS ?? "8"); // 試行上限。到達ジョブは Claude を回さず error 確定（暴走防止）
 const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS ?? "300000");
+// 写真報告＋ダイジェスト共通のモデル/エフォート（per-run指定）。既定= Opus 4.8 / medium。
+// 文脈(digest/版履歴)が育つほど深い思考は不要、の方針。env で上書き可。effort= low/medium/high/xhigh/max。
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-8";
+const CLAUDE_EFFORT = process.env.CLAUDE_EFFORT ?? "medium";
 const TOKEN_URI = "https://oauth2.googleapis.com/token";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const UPLOAD_API = "https://www.googleapis.com/upload/drive/v3"; // ダイジェスト直書き（media/multipart）用
@@ -439,8 +443,8 @@ function buildPrompt(ctx, docFileNames, hasDigest, settings) {
 /** VM の Claude Code をヘッドレス起動して report.json を書かせる。stdout/stderr を返す。 */
 function runClaude(dir, prompt) {
   return new Promise((resolve, reject) => {
-    // 権限プロンプトで止まらないようヘッドレス用フラグ。
-    const args = ["-p", prompt, "--permission-mode", "acceptEdits"];
+    // 権限プロンプトで止まらないようヘッドレス用フラグ＋モデル/エフォート（per-run）。
+    const args = ["-p", prompt, "--permission-mode", "acceptEdits", "--model", CLAUDE_MODEL, "--effort", CLAUDE_EFFORT];
     const child = spawn(CLAUDE_BIN, args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
@@ -648,7 +652,7 @@ function sleep(ms) {
 }
 
 async function loop() {
-  console.log(`ai-worker(方式Y/Drive直読み・写真+ダイジェスト) 起動。interval=${POLL_INTERVAL_MS}ms`);
+  console.log(`ai-worker(方式Y/Drive直読み・写真+ダイジェスト) 起動。interval=${POLL_INTERVAL_MS}ms model=${CLAUDE_MODEL} effort=${CLAUDE_EFFORT}`);
   for (;;) {
     try {
       // 写真報告を優先（人が待つUI起点）。無ければダイジェスト生成を1件。どちらも無ければ待つ。
