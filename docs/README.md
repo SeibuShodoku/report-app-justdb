@@ -1,16 +1,22 @@
 # ドキュメント一覧
 
-西武消毒の防除作業報告書アプリの仕様・設計の入口。
+西武消毒の**案件報告書 WEB**（写真報告書が本番稼働→**案件ポータル**へ）の仕様・設計の入口。
+文書は3種類に分離：**構想（北極星）＝`vision/case-portal.md`／現況アーキ＝`architecture/`／計画＝`spec/`**。
 
 ## 現在地（2026-06-20）
 
 - **Slack写真→AI写真報告書システム**（本丸）：Slack「📸報告書」→AI下書き→WEBで仕上げ（赤丸・版管理・版名・削除）まで **Cloud Run＋IAP で prod 稼働**。**設定モーダル＋AIトーン＋PDF体裁**（齋藤マンション様 PDF 準拠）実装済。VM ワーカー（systemd 常駐）。正本＝`architecture/slack-photo-report-architecture.md`。
-- **案件ダイジェスト生成 Phase D1（2026-06-20・E2E済）**：`case_digest_jobs`→VM ワーカーが未読書類＋Slack増分をマージ要約→**`_ai/digest.md` を Drive 直書き（Option A）**＋トピック要約。写真AIへ文脈(digest)を初供給。残＝Phase D2（既存 `topic-digest-gas` の API 直叩きを VM ジョブへ切替・課金停止）。
+- **案件ダイジェスト生成 Phase D1（2026-06-20・E2E済）**：`case_digest_jobs`→VM ワーカーが未読書類＋Slack増分をマージ要約→**`_ai/digest.md` を Drive 直書き（Option A）**＋トピック要約。写真AIへ文脈(digest)を初供給。
+- **案件ダイジェスト Phase D2（2026-06-20・本番切替完了）**：`topic-digest-gas` を enqueue＋apply の I/O 専従へ切替、要約は VM・正本＝AI製 `digest.md`・備考＝固定的重要情報カード。**旧 `summarizer.gs` 撤去＝API 課金停止**。正本＝`architecture/slack-photo-report-architecture.md §7`・中央契約 `contracts/case-digest/`。
 - 紺谷V／写真報告書／融合のモック（`/mock`）：Supabase 接続・カスケード・ケース取得をライブ確認済（プレゼン可）。
+
+## 0. 構想（北極星）
+
+- `vision/case-portal.md`: **案件ポータル構想**（報告書統合→社内/顧客2画面→双方向。D-PORTAL）。本書の仕様・設計が向かう先。
 
 ## 1. 仕様（spec）
 
-- `spec/requirements.md`: 目的・スコープ・現行の決定事項
+- `spec/requirements.md`: 目的・スコープ・現行の決定事項（**v1.0・防除WEB部分**）
 - `spec/report-formats.md`: 紺谷V／写真報告書／融合の構成、PDF・写真・注記・設定JSON
 - `spec/open-issues.md`: 未確定事項
 - `spec/slack-photo-report-impl-plan.md`: 写真報告書システムの**実装計画**（M1/M2達成・案件ダイジェスト統合）。**現況の正本アーキは `architecture/slack-photo-report-architecture.md`**
