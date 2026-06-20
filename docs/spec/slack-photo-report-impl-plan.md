@@ -1,7 +1,7 @@
 # 写真報告書 自動生成（Slack 起点）実装計画書 v0.2
 
-最終更新：2026-06-19
-状態：**Phase 1/2/3 prod稼働。Phase4 版管理・注記＝ブラウザE2E済。Phase5 堅牢化＝完了。Phase6 設定モーダル＋PDF体裁＝実装済（migration 適用済 2026-06-20）。Phase D1 案件ダイジェスト生成＝実装/E2E済 2026-06-20（Option A・worker 直書き）。残＝Phase D2（digest-gas を VM ジョブへ切替・API課金停止）・JUST.DB本接続(予算)**
+最終更新：2026-06-20
+状態：**Phase 1/2/3 prod稼働。Phase4 版管理・注記＝ブラウザE2E済。Phase5 堅牢化＝完了。Phase6 設定モーダル＋PDF体裁＝実装済（migration 適用済 2026-06-20）。Phase D1 案件ダイジェスト生成＝実装/E2E済 2026-06-20（Option A・worker 直書き）。Phase D2 digest-gas 切替＝2026-06-20 本番切替完了（統一正本モデル・旧 API 直叩き撤去＝API課金停止）。残＝JUST.DB本接続(予算)**
 対象仕様（正本）：`../architecture/slack-photo-report-architecture.md`（本書はその実装手順）
 
 ## 0. 方針
@@ -35,7 +35,7 @@
 - [ ] **refresh token を1本発行**：OAuth Playground（歯車→Use your own OAuth credentials → client_id/secret 入力）で
       scope = `https://www.googleapis.com/auth/drive.readonly` を指定し、**フォルダを読める社内アカウント（当面 mgmt-strat@seibu-s.co.jp）**で同意 → `Exchange authorization code for tokens` で refresh_token 取得。
       （既存の Calendar トークンに混ぜず、報告書用に独立発行する＝最小権限）
-- [ ] **report-app の `.env.local` に設定**：`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_DRIVE_REFRESH_TOKEN` / `DRIVE_PROXY_SERVER_SECRET`。本番(Vercel)は同名の env を設定。`.env.example` 更新済み。
+- [ ] **report-app の `.env.local` に設定**：`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_DRIVE_REFRESH_TOKEN` / `DRIVE_PROXY_SERVER_SECRET`。本番(Cloud Run)は同名の env を設定。`.env.example` 更新済み。
 - [ ] **後片付け**：不要になった外部 SA `report-drive-reader@seibot-proxy.iam.gserviceaccount.com`（鍵含む）を削除、`.env.local` の旧 `GOOGLE_SA_KEY_JSON` 行を除去。OAuth 経路の疎通確認後に実施。
 
 ### 1b. 画像プロキシ
@@ -89,11 +89,11 @@
 
 - [x] **Drive 書込スコープ準備**：`drive` full の refresh token を発行し Cloud Run の `GOOGLE_DRIVE_REFRESH_TOKEN` に設定（rev00002）。**2026-06-20：同 RW トークンを VM ワーカーへ流用**（digest 直書き用。RW を tokeninfo で確認）。
 - [x] **「口」API（report-app）**：`POST/GET /api/case-digest`＋`src/lib/drive-write.ts`/`case-digest.ts`。実機でDrive操作検証済。※生成の書き戻しには使わない（IAP 非対応のため Option A）。GET 読取／非VM producer 用に存置。
-- [x] **GD書類の既読索引**：digest.md 末尾マーカー `<!-- digest-read-doc-ids: … -->` で既読 fileId を保持し未読のみ新規に読む（`parseReadDocIds`/`withReadDocIdsMarker`）。
-- [ ] **マッピング**：JUST.DB案件一覧（GOOGLE_DRIVE_URL / SLACK_THREAD_TS / SLACK_CHANNEL_ID / 案件ID）で案件↔フォルダ↔スレッドを解決（Phase D2 で GAS が使う）。
+- [x] **GD書類の既読索引**：digest.md 末尾マーカー `<!-- digest-read-doc-ids: … -->` で既読 fileId を保持し未読のみ新規に読む（`parseReadDocIds`/`withTailMarkers`／D2で `slack-absorbed-ts` カーソルも同居）。
+- [x] **マッピング**：JUST.DB案件一覧（GOOGLE_DRIVE_URL / SLACK_THREAD_TS / SLACK_CHANNEL_ID / 案件ID）で案件↔フォルダ↔スレッドを解決（**Phase D2 で GAS が使用＝実装済**）。
 - [x] **ワーカー切替（写真側）**：`_ai/digest.md` を folder_id→親 の順に Drive 直読みし、あれば文脈に（commit `feb2f58`）。実機検証済。
 - [x] **ダイジェスト“生成”＝Phase D1（2026-06-20・E2E済）**：ジョブ `case_digest_jobs` → VM ワーカー（`processDigestJob`）が未読書類＋`slack_delta` をマージ要約 → **`_ai/digest.md`・`slack-summary-history.md` を直書き**＋`result_summary`。専用テストフォルダで検証（整形・既読マーカー・履歴・2キュー相乗り）。
-- [ ] **Phase D2＝digest-gas 切替**：`topic-digest-gas` の Claude API 直叩きを撤去し `case_digest_jobs` へ投入→`result_summary` でトピック更新（フラグ並走・API 課金停止）。
+- [x] **Phase D2＝digest-gas 切替（2026-06-20 本番切替完了）**：`topic-digest-gas` の Claude API 直叩きを撤去し `case_digest_jobs` へ投入→`result_summary` でトピック更新（統一正本モデル・API 課金停止）。
 - [ ] **注意**：AI専用フォルダの mgmt 限定 ACL は、親フォルダ共有の継承との兼ね合いを実機確認して詰める。
 
 > **M2.5（達成・D1）**：ジョブ投入 → AI専用フォルダに digest.md が生成 → 写真ワーカーがそれを文脈に使い、より正確な report JSON を生成。

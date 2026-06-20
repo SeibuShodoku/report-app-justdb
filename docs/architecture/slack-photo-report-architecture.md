@@ -16,8 +16,8 @@
 | コンポーネント | 置き場 | 責務 |
 |---|---|---|
 | **report-app（WEB/BFF）** | Cloud Run `report-app-justdb`＋**IAP**（@seibu-s.co.jp）/ seibu-dispatch-poc-tky | 写真報告書の表示・編集・**版管理**（`/report/photo`）。画像プロキシ（`/api/folder`・`/api/photo`）。report JSON 取込（`photo_reports`）。**Drive書込み（RW保有）＝版スナップショット・案件ダイジェスト「口」** |
-| **AIワーカー** | VM（seibot-proxy）`/mnt/claude-data/projects/photo-report-worker` 常駐（tmux `photo-worker`） | `photo_report_jobs` を拾い、**Drive直読み（readonly）**で写真取得→**VMのClaude Code(headless)**で report.json 生成→`photo_reports` 保存。**Drive書込みはしない** |
-| **案件ダイジェスト要約** | 既存 `justdb-hub-gas/justdb-topic-digest-gas`（GAS・cron） | JUST.DB案件履歴ポーリング→案件スレッドを Claude で**マージ要約**→トピック備考更新。**要約の責務を一本化** |
+| **AIワーカー** | VM（seibot-proxy）`/mnt/claude-data/projects/photo-report-worker`・**systemd 常駐**（`photo-report-worker.service`・自動再起動） | 2役を同一プロセスで：①写真報告＝`photo_report_jobs` を拾い**Drive直読み**で写真取得→**Claude Code(headless)**→`photo_reports` 保存。②案件ダイジェスト＝`case_digest_jobs` を拾い未読書類＋Slack増分を要約→`_ai/digest.md` を**Drive直書き（RW・§7/§8）** |
+| **案件ダイジェスト（GAS側）** | 既存 `justdb-hub-gas/justdb-topic-digest-gas`（GAS・cron） | JUST.DB案件履歴ポーリングで動いた案件を検出→Slack増分を構造化して `case_digest_jobs` に**投入(enqueue)**、done を**適用(apply)＝トピック備考 chat.update**。**要約はしない**（D2＝VMへ一本化・§7） |
 | **Slackトリガー（hub-gas）** | `justdb-hub-gas/justdb-hub-gas`（GAS・block_actions） | トピックの「📸報告書」ボタン→スレッドに写真用サブフォルダURL＋[設定][報告書作成]→ジョブ投入 |
 | **Supabase** | 既存 | `photo_report_jobs`（ジョブ台帳）/ `photo_reports`（**現在版1件のみ**・folder_id キー） |
 | **JUST.DB** | 既存 | 正本。案件一覧に **案件ID・GoogleDrive URL・Slack thread_ts/channel** を保持＝**案件↔フォルダ↔スレッドのマッピング正本**（`field_1709884614`=GD URL ほか） |
@@ -42,7 +42,7 @@
                                  →Claude Code(headless)→ report.json（写真ごとの見出し/注記/annotations枠/要約）
                                  └─▶ [photo_reports]（現在版1件・上書き）
                                           │
-            ┌─────────────────────────────┘ 完了返信(予定): 最新報告書URLをスレッドへ1本
+            ┌─────────────────────────────┘ 完了返信(実装済・Phase3c): done検知→[📝報告書を開く]→クリックでURL発行
             ▼
 [report-app /report/photo]（IAP/SSO）: 人が赤丸・微修正・並べ替え
    │ 保存/ロールバック
@@ -90,7 +90,7 @@
 
 ## 7. 案件ダイジェスト統合（役割分担）— D-DIGEST / Phase D1 実装・E2E済（2026-06-20）/ Phase D2 統一正本モデル（2026-06-20 本番切替完了・旧 Claude API 直叩き撤去）
 > **D2 統一正本モデル**：正本＝AI製 `digest.md`（重要情報（固定）／経緯（時系列）／既読書類索引）。生Slackは Supabase ジョブ `slack_delta` で渡す**短命データ**（畳み込み後 null 破棄）。**カーソルも AI 所有**＝既読書類ID＋吸収済 Slack ts を digest.md 末尾に同居（ジョブ `absorbed_ts` は GAS が読む写し）。**トピック備考＝固定的な重要情報カード**（`result_summary`・構造化データは除外）。GAS は要約せず **投入(enqueue)＋適用(apply)の2フェーズ I/O 専従**（`TOPIC_DIGEST_USE_VM` で旧経路と並走→撤去で API課金停止）。詳細＝中央契約 `contracts/case-digest/`。
-- **要約“計算”は VM AI ワーカーに一本化**（GAS の Claude API 直叩きをやめる）。GAS は継ぎ目（Slack/JUST.DB トリガー・増分スレ本文の取得・トピック更新）に専念。ジョブ＝Supabase `case_digest_jobs`（GAS が投入／VM が claim）。
+- **要約“計算”は VM AI ワーカーに一本化**（GAS の Claude API 直叩きをやめる）。GAS は継ぎ目（Slack/JUST.DB トリガー・増分スレ本文の取得・トピック更新）に専念。ジョブ＝Supabase `case_digest_jobs`（GAS が投入／VM が claim）。VM への入力＝`slack_delta`(未要約増分)＋前回 `digest.md`＋継続性のため前回カード `prev_summary`(GAS が直近備考から `td_extractRemarksContent_`)。
 - **生成物の書き戻し＝ワーカーが Drive へ直書き（Option A）**：`_ai/` を find-or-create し `digest.md`(コア) と `slack-summary-history.md`(時系列履歴) を upsert。トピック要約は `case_digest_jobs.result_summary` へ書き、GAS がポーリングして反映（IAP 越え不要）。
   - 当初は report-app「口」`/api/case-digest` 経由を想定したが、**統合（直）Cloud Run IAP がプログラム的 OIDC audience を受け付けない**（VM から実測：run.app URL／ブラウザ共有クライアント／プロジェクト所有 OAuth クライアント等すべて `Invalid JWT audience`）→ Option A に切替（D-DIGEST 追補）。digest は **AI 所有・人非接触**で「口一本」の監査根拠が薄く、ワーカー直書きで十分。「口」は GET 読取り／非VM producer 用に存置。
 - **GD書類は“一度読んだら既読”**：digest.md 末尾の機械可読マーカー `<!-- digest-read-doc-ids: … -->` に既読 fileId を保持し、**未読のみ新規に読む**（トークン安定・D-DIGEST「欲張らない」）。コアmdには索引（名前・日付・種別＋要点）だけ。
@@ -126,13 +126,13 @@
 | アプリ ⇄ セキュリティ（seibot-proxy・HMAC） | 既存 |
 | JUST.DB ⇄ 利用側 | 既存（中央 `contracts/justdb/`） |
 | 画像プロキシ＋report JSON（report-app ⇄ ブラウザ/ワーカー） | 新規（稼働後に契約抽出） |
-| **digest-gas ⇄ report-app「口」**（要約引き渡し・共用md仕様） | **新規・要契約化** |
+| **案件ダイジェスト**（GAS enqueue ⇄ VM worker ⇄ Drive `_ai/`・digest.md/ジョブ仕様） | **契約済**＝中央 `contracts/case-digest/`（Option A＝worker直書き。「口」は GET 専用に存置） |
 | report-app ⇄ Drive `_ai/`（digest.md・report 版履歴） | 新規（版UI実装後に契約抽出） |
 
 ## 10. 状態
 - ✅ **M1**（WEB単体：実フォルダ→`/report/photo` プリフィル＋印刷）。
 - ✅ **M2**（Slack抜きE2E：ジョブ→ワーカー→Drive直読み→Claude Code→report.json→保存）。文脈同梱で精度向上（クマネズミ案件を正しく特定）。
-- ✅ **Slackトリガー入口**：hub-gas に「📸報告書」ボタン＋block_actions ハンドラ（pr_start/pr_create/pr_settings）。**prod デプロイ済**・テスター(`U023GCWKLCS`)ガード。VMワーカー prod 運用中（tmux `photo-worker`・MAX_PHOTOS=30）。
+- ✅ **Slackトリガー入口**：hub-gas に「📸報告書」ボタン＋block_actions ハンドラ（pr_start/pr_create/pr_settings）。**prod デプロイ済**・テスター(`U023GCWKLCS`)ガード。VMワーカー prod 運用中（**systemd `photo-report-worker.service`**・MAX_PHOTOS=30）。
 - ✅ **写真サブフォルダ化**（§4）＋ **同日エフェメラル** ＋ **done/error 再投入**（Phase3b・hub-gas `a07d64c`・テスターE2E検証済 2026-06-19）。
 - ✅ **完了返信**（Phase3c・hub-gas `fd612b5`・prod検証済）：1分毎cron `pr_notifyDoneJobs` が done(未通知)を検知→スレッドへ[📝報告書を開く]→`pr_open` がクリック時に launch token URL を発行（生URLを焼かず期限切れ回避）。`photo_report_jobs.notified_at` で重複防止・再投入時null。
 - ✅ **版管理＋注記（report-app・Phase4・実装/静的検証済2026-06-19）**：`/report/photo` を編集面化。

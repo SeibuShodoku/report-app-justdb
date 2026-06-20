@@ -1,5 +1,9 @@
 # 要件定義（v1.0）
 
+> **位置づけ：本書は「防除WEBアプリ部分」の要件（v1.0）。** 本番稼働の写真報告書は
+> [`architecture/slack-photo-report-architecture.md`](../architecture/slack-photo-report-architecture.md)、向かう先（北極星）は
+> [`vision/case-portal.md`](../vision/case-portal.md)。
+
 ## 1. 背景
 
 西武消毒（城東支店・東京支店）の報告書業務が様式乱立で、端末差による印刷崩れや、

@@ -1,6 +1,6 @@
 # デプロイ配置メモ（どの資源がどこにあるか）
 
-最終更新：2026-06-19
+最終更新：2026-06-20
 管理3面の「地図（台帳）」用。report-app を構成する**Google/クラウド側の資源の所在**を一覧化する。
 （コードの構成は `architecture/repository-structure.md`、写真報告書の正本アーキは `architecture/slack-photo-report-architecture.md`）
 
@@ -12,20 +12,20 @@
 | サービスURL | `https://report-app-justdb-137338258930.asia-northeast1.run.app` | IAP 経由でのみ到達可 |
 | OAuthクライアント（Drive読取） | `seibu-dispatch-poc-tky` | dispatch の既存クライアントを**流用**（client_id 先頭=プロジェクト番号 137338258930） |
 | Drive API | `seibu-dispatch-poc-tky` で有効化 | 未有効だと 403 SERVICE_DISABLED |
-| ワーカー用SA `report-worker-iap` | `seibu-dispatch-poc-tky` | 権限は **`iap.httpsResourceAccessor` のみ**（report-app への“通行証”・Drive/GCPリソース権限なし） |
-| Claude VM（AIワーカー実行） | **`seibot-proxy`**（別プロジェクト） | 汎用エージェントを顧客データPJから**意図的に分離**。Google資格情報は持たない（IAP通行証SAの鍵のみ後置） |
+| ワーカー用SA `report-worker-iap` | `seibu-dispatch-poc-tky` | 権限は **`iap.httpsResourceAccessor` のみ**（report-app への“通行証”）。**旧 Option B 用・現在未使用**（Option A＝worker が Drive 直書きで IAP 越え不要・D-DIGEST 項5） |
+| Claude VM（AIワーカー実行） | **`seibot-proxy`**（別プロジェクト） | 汎用エージェントを顧客データPJから分離。**Option A 以降は mgmt-strat の Drive OAuth（`GOOGLE_DRIVE_REFRESH_TOKEN`＝RW）を保持し、Drive を直読み／直書き**（`_ai/digest.md` 等）。IAP は越えない |
 | アプリのコード | GitHub `SeibuShodoku/report-app-justdb` | — |
 
 ## IAP アクセスモデル
 - `roles/iap.httpsResourceAccessor` を付与済み：
   - `domain:seibu-s.co.jp`（社内ブラウザ＝Google SSO で `/report/photo` 閲覧）
-  - `serviceAccount:report-worker-iap@seibu-dispatch-poc-tky.iam.gserviceaccount.com`（ヘッドレスのワーカーが OIDC で通過）
+  - `serviceAccount:report-worker-iap@seibu-dispatch-poc-tky.iam.gserviceaccount.com`（**旧 Option B の名残・現在未使用**。ダイジェスト生成は Option A＝Drive 直書きで IAP を越えない＝D-DIGEST 項5）
 - IAP サービスエージェント `service-137338258930@gcp-sa-iap…` に `run.invoker` 付与済み。
 
 ## 秘密の置き場
 - **Cloud Run env**（report-app サーバー）：`GOOGLE_CLIENT_ID/SECRET`・`GOOGLE_DRIVE_REFRESH_TOKEN`・`SUPABASE_*`・`REPORT_LINK_SECRET`・`DRIVE_PROXY_SERVER_SECRET`（`--env-vars-file` で投入・ソースに焼かない）
 - **ローカル開発**：`.env.local`（gitignore）
-- **VM ワーカー**：`report-worker-iap` のSA鍵＋`SUPABASE_*`・`REPORT_APP_BASE`・`DRIVE_PROXY_SERVER_SECRET`
+- **VM ワーカー**：`SUPABASE_*`・`GOOGLE_CLIENT_ID/SECRET`・`GOOGLE_DRIVE_REFRESH_TOKEN`（mgmt-strat RW＝Drive 直読み/直書き）・`CLAUDE_MODEL`/`CLAUDE_EFFORT`（既定 Opus 4.8/medium）・`MAX_*`/`POLL_INTERVAL_MS` 等（全一覧＝`worker/README.md`）。**Option A のため `report-worker-iap` SA鍵・`REPORT_APP_BASE` は不要**（旧 Option B の名残）
 
 ## 注意・将来
 - `seibu-dispatch-poc-tky` は「dispatch + visit-planner + report-app」を抱える**共有プロジェクト**。同居の理由＝OAuthクライアント流用／請求枠上限で新規PJ不可／visit-planner と同構成。

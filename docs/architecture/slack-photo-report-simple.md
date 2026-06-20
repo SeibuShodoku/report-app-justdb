@@ -47,4 +47,5 @@
 
 - 済：Slack 入口→写真→AI下書き→完成通知→WEBで仕上げ（赤丸・版管理・版名・削除）まで **prod 稼働**。写真サブフォルダ化・完了返信・版管理/注記UI 済。**設定モーダル＋AIトーン＋PDF体裁**（齋藤マンション様 PDF 準拠）実装済。ワーカーは systemd 常駐（自動再起動）。
 - 済（2026-06-20）：**案件ダイジェスト“生成” Phase D1**＝ジョブ(`case_digest_jobs`)→VM ワーカーが未読書類＋Slack増分をマージ要約→**`_ai/digest.md` を Drive 直書き**＋トピック要約を返す（E2E検証済）。これで写真AIに文脈(digest)が初めて実供給される。
-- 次：**Phase D2**＝既存 `topic-digest-gas`（Claude API 直叩き）を VM ジョブへ切替（API 課金停止）／ Slack「⚙️設定」のURL導線 ／ 物件名の JUST.DB 取得。
+- 済（2026-06-20）：**Phase D2 本番切替完了**＝`topic-digest-gas` を VM ジョブへ切替（旧 Claude API 直叩き撤去＝API 課金停止・統一正本モデル）。
+- 次：Slack「⚙️設定」のURL導線 ／ 物件名の JUST.DB 取得。
