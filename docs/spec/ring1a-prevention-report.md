@@ -1,7 +1,7 @@
 # Ring 1a 仕様 — 防除作業報告書（紺谷V）の実体化
 
 最終更新：2026-06-20
-状態：**実装・本番デプロイ済（2026-06-21）**。Cloud Run rev `report-app-justdb-00008`＋hub-gas/topic-digest を clasp push。要・実機E2E（テスター）。北極星＝[`../vision/case-portal.md`](../vision/case-portal.md)（D-PORTAL）。現況アーキ＝[`../architecture/slack-photo-report-architecture.md`](../architecture/slack-photo-report-architecture.md)。
+状態：**実装・本番デプロイ済（2026-06-21）**。Cloud Run rev `report-app-justdb-00008`／hub-gas は **clasp push＋`clasp deploy -i <prod> @1085`**（**push だけでは prod `/exec` に反映されない＝要注意**・[[hub-gas-webapp-deploy]]）／topic-digest は cron(HEAD)反映。要・実機E2E（テスター）。北極星＝[`../vision/case-portal.md`](../vision/case-portal.md)（D-PORTAL）。現況アーキ＝[`../architecture/slack-photo-report-architecture.md`](../architecture/slack-photo-report-architecture.md)。
 
 ## 0. スコープ
 リング1のうち **1a＝防除作業報告書(A・紺谷V)を「モックのみ」から「保存・版管理できる実フロー」へ**。
