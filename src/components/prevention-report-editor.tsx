@@ -112,7 +112,9 @@ export function PreventionReportEditor({
   const [reportText, setReportText] = useState(initial?.reportText ?? "");
 
   const [pests, setPests] = useState<string[]>([]);
-  const [masterMsg, setMasterMsg] = useState("マスタ読込中…");
+  const [chemMap, setChemMap] = useState<Record<string, ChemicalOption[]>>({});
+  const [masterReady, setMasterReady] = useState(false);
+  const [masterMsg, setMasterMsg] = useState("薬剤マスタ読込中…（少々お待ちください）");
 
   const [saveLabel, setSaveLabel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -123,20 +125,45 @@ export function PreventionReportEditor({
   const [customerVisible, setCustomerVisible] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
-  // 害虫マスタ（カスケード1段目）を読み込む。
+  // 害虫＋薬剤マスタを初期化で一括取得してキャッシュする（害虫→薬剤→処理方法を即時に出すため）。
+  // 都度フェッチ（害虫選択ごとに /api/master/chemicals?pest=）の待ち＝空欄で戸惑う問題を解消。
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/master/pests");
-        const data = await res.json();
+        const [pestsRes, chemsRes] = await Promise.all([
+          fetch("/api/master/pests"),
+          fetch("/api/master/chemicals") // pest 無し＝全件（applicablePests 付き）
+        ]);
+        const pestsData = await pestsRes.json();
+        const chemsData = await chemsRes.json();
         if (!alive) return;
-        if (!res.ok) {
-          setMasterMsg(`マスタ未接続: ${data.error ?? res.status}`);
+        if (!pestsRes.ok || !chemsRes.ok) {
+          setMasterMsg(`マスタ未接続: ${pestsData.error ?? chemsData.error ?? "error"}`);
           return;
         }
-        setPests(data.pests ?? []);
-        setMasterMsg(`マスタ接続OK（害虫 ${data.pests?.length ?? 0} 種）`);
+        const map: Record<string, ChemicalOption[]> = {};
+        for (const c of (chemsData.chemicals ?? []) as Array<ChemicalOption & { applicablePests?: string[] }>) {
+          const opt: ChemicalOption = { name: c.name, unit: c.unit, methods: c.methods ?? [] };
+          for (const p of c.applicablePests ?? []) {
+            (map[p] ??= []).push(opt);
+          }
+        }
+        setPests(pestsData.pests ?? []);
+        setChemMap(map);
+        setMasterReady(true);
+        setMasterMsg(
+          `マスタ接続OK（害虫 ${pestsData.pests?.length ?? 0} 種・薬剤 ${chemsData.chemicals?.length ?? 0} 件）`
+        );
+        // 既存版の各行に薬剤候補・処理方法候補を補完（読込済み報告書も編集可に）。
+        setWorkRows((prev) =>
+          prev.map((r) => {
+            if (!r.pest) return r;
+            const opts = map[r.pest] ?? [];
+            const cur = opts.find((o) => o.name === r.chemical);
+            return { ...r, chemicalOptions: opts, methodOptions: cur?.methods ?? r.methodOptions };
+          })
+        );
       } catch {
         if (alive) setMasterMsg("マスタ取得に失敗しました。");
       }
@@ -176,16 +203,15 @@ export function PreventionReportEditor({
   const patchWork = (id: string, partial: Partial<WorkRow>) =>
     setWorkRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...partial } : r)));
 
-  const onPestChange = async (id: string, pest: string) => {
-    patchWork(id, { pest, chemical: "", method: "", chemicalOptions: [], methodOptions: [] });
-    if (!pest) return;
-    try {
-      const res = await fetch(`/api/master/chemicals?pest=${encodeURIComponent(pest)}`);
-      const data = await res.json();
-      if (res.ok) patchWork(id, { chemicalOptions: data.chemicals ?? [] });
-    } catch {
-      /* マスタ未接続時はプルダウンが空のまま（バナーで通知） */
-    }
+  const onPestChange = (id: string, pest: string) => {
+    // 初期化でキャッシュ済みのマップから即時に薬剤候補を出す（都度フェッチしない）。
+    patchWork(id, {
+      pest,
+      chemical: "",
+      method: "",
+      chemicalOptions: pest ? (chemMap[pest] ?? []) : [],
+      methodOptions: []
+    });
   };
 
   const onChemicalChange = (id: string, chemical: string, options: ChemicalOption[]) => {
@@ -580,8 +606,8 @@ export function PreventionReportEditor({
               {workRows.map((r) => (
                 <tr key={r.id}>
                   <td>
-                    <select value={r.pest} onChange={(e) => onPestChange(r.id, e.target.value)}>
-                      <option value="">選択…</option>
+                    <select value={r.pest} disabled={!masterReady} onChange={(e) => onPestChange(r.id, e.target.value)}>
+                      <option value="">{masterReady ? "選択…" : "読込中…"}</option>
                       {uniq([r.pest, ...pests]).map((p) => (
                         <option key={p} value={p}>{p}</option>
                       ))}
