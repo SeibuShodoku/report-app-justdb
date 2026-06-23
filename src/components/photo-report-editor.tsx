@@ -74,6 +74,9 @@ export function PhotoReportEditor({
   currentUserEmail
 }: Props & { initialView: PhotoReportView; initialSettings: PhotoReportSettings }) {
   const [items, setItems] = useState<EditItem[]>(() => toEditItems(initialView));
+  const [coverFileId, setCoverFileId] = useState<string>(
+    () => initialView.coverFileId ?? initialView.photoItems[0]?.fileId ?? ""
+  );
   const [headerSummary, setHeaderSummary] = useState(initialView.headerSummary ?? "");
   const [workItemsText, setWorkItemsText] = useState((initialView.workItems ?? []).join("\n"));
   const [saveLabel, setSaveLabel] = useState("");
@@ -110,6 +113,7 @@ export function PhotoReportEditor({
     () => ({
       caseId,
       driveFolderId: folderId,
+      coverFileId: items.find((it) => it.fileId === coverFileId)?.fileId ?? items[0]?.fileId,
       headerSummary: headerSummary.trim() || undefined,
       workItems: workItemsText
         .split("\n")
@@ -122,7 +126,7 @@ export function PhotoReportEditor({
         annotations: it.annotations
       }))
     }),
-    [caseId, folderId, headerSummary, workItemsText, items]
+    [caseId, folderId, coverFileId, headerSummary, workItemsText, items]
   );
 
   const saveSettings = useCallback(async () => {
@@ -315,7 +319,7 @@ export function PhotoReportEditor({
   const execDate = (settings.execDate ?? "").trim();
   const reporter = (settings.reporter ?? "").trim();
   const workItemsList = workItemsText.split("\n").map((s) => s.trim()).filter(Boolean);
-  const coverItem = items[0];
+  const coverItem = items.find((it) => it.fileId === coverFileId) ?? items[0];
 
   // 印刷レイアウト＝テンプレート grid-8（縦4×横2＝8枚/A4ページ）。
   // 写真を 8 枚ずつのページに分割し、各ページを A4 固定で描く（画面準拠をやめ環境非依存に）。
@@ -606,6 +610,7 @@ export function PhotoReportEditor({
             <div className="photo-page" key={pageIndex}>
               {pageItems.map((item, j) => {
                 const index = pageIndex * PHOTOS_PER_PAGE + j;
+                const isCover = item.fileId === coverFileId;
                 return (
                   <figure key={item.fileId} className="photo-card">
                     <div className="print-only print-caption">
@@ -630,6 +635,15 @@ export function PhotoReportEditor({
                       </button>
                     </div>
                     <figcaption className="editor-field no-print">
+                      <button
+                        type="button"
+                        className={isCover ? "" : "btn-secondary"}
+                        onClick={() => setCoverFileId(item.fileId)}
+                        disabled={isCover}
+                        title="この写真を表紙にします"
+                      >
+                        {isCover ? "★ 表紙（この写真）" : "☆ 表紙にする"}
+                      </button>
                       <label htmlFor={`h-${item.fileId}`}>見出し（写真 {index + 1}）</label>
                       <input
                         id={`h-${item.fileId}`}

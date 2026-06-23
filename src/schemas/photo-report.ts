@@ -47,6 +47,7 @@ export const photoReportDraftSchema = z.object({
   constructionId: z.string().max(100).optional(),
   investigationId: z.string().max(100).optional(),
   driveFolderId: z.string().min(1).max(200),
+  coverFileId: z.string().max(200).optional(), // 表紙にする写真の fileId（既定＝先頭）
   headerSummary: z.string().max(2000).optional(), // 施工概要/調査概要（まとめ文章）
   // 施工内容/調査内容（番号付きの要約行。AI が写真群をまとめて数行に）。最終ページ用。
   workItems: z.array(z.string().max(300)).max(50).default([]),

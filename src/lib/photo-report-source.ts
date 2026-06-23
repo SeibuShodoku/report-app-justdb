@@ -24,6 +24,7 @@ export type PhotoReportItemView = {
 export type PhotoReportView = {
   caseId: string;
   driveFolderId: string;
+  coverFileId?: string; // 表紙にする写真（既定＝先頭）
   headerSummary?: string;
   workItems?: string[]; // 施工内容/調査内容（最終ページ）
   photoItems: PhotoReportItemView[];
@@ -51,6 +52,7 @@ export function imagesToView(
 
 /** Supabase `photo_reports` に保存された AI 生成 report JSON の形（必要分のみ）。 */
 export type StoredReportJson = {
+  coverFileId?: string;
   headerSummary?: string;
   workItems?: string[];
   photoItems: Array<{
@@ -92,6 +94,7 @@ export function overlayReport(
   }
   return {
     ...view,
+    coverFileId: stored.coverFileId ?? view.coverFileId,
     headerSummary: stored.headerSummary ?? view.headerSummary,
     workItems: stored.workItems ?? view.workItems,
     photoItems: ordered
