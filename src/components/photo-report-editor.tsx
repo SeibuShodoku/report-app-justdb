@@ -354,6 +354,18 @@ export function PhotoReportEditor({
         <button type="button" onClick={toggleVersions}>
           {versionsOpen ? "版を閉じる" : "版を表示"}
         </button>
+        <button
+          type="button"
+          onClick={() =>
+            window.open(
+              `/api/photo-report/pdf?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+              "_blank"
+            )
+          }
+          title="サーバー側で決定的なA4 PDFを生成（保存済みの現在版が対象）。先に保存してください。"
+        >
+          サーバーPDF（保存版）
+        </button>
         <PrintButton />
       </div>
 
