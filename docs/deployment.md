@@ -8,7 +8,8 @@
 
 | 資源 | 置き場 | 備考 |
 |---|---|---|
-| アプリ本体（Next.js） | Cloud Run **`report-app-justdb`**（`seibu-dispatch-poc-tky` / asia-northeast1） | `--no-allow-unauthenticated`＋**IAP** で社内限定 |
+| アプリ本体（Next.js） | Cloud Run **`report-app-justdb`**（`seibu-dispatch-poc-tky` / asia-northeast1） | `--no-allow-unauthenticated`＋**IAP** で社内限定。**memory 2Gi / cpu 2**（サーバーPDFの Chromium 用） |
+| サーバーPDF用 Chromium | 同コンテナ内（Dockerfile で `chromium`＋`fonts-noto-cjk`＋`dumb-init`） | `/api/photo-report/pdf` が `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium` で起動。VM ではなく Cloud Run（方式A） |
 | サービスURL | `https://report-app-justdb-137338258930.asia-northeast1.run.app` | IAP 経由でのみ到達可 |
 | OAuthクライアント（Drive読取） | `seibu-dispatch-poc-tky` | dispatch の既存クライアントを**流用**（client_id 先頭=プロジェクト番号 137338258930） |
 | Drive API | `seibu-dispatch-poc-tky` で有効化 | 未有効だと 403 SERVICE_DISABLED |

@@ -29,10 +29,12 @@ gcloud run deploy report-app-justdb \
   --source . \
   --region asia-northeast1 \
   --project seibu-dispatch-poc-tky \
+  --memory 2Gi --cpu 2 \
   --quiet
 ```
 
 - `--source .` で Dockerfile を Cloud Build → 新リビジョン配信。**env / IAP / サービスアカウントは既存リビジョンから継承**（秘密の再投入不要）。
+- **`--memory 2Gi --cpu 2` は必須**（サーバーPDFの Chromium がメモリ食い。512Mi 既定だと PDF 生成でクラッシュしうる）。Dockerfile が `chromium`/`fonts-noto-cjk`/`dumb-init` を入れるためイメージは +約300MB。
 - 確認：`✓ ... revision report-app-justdb-XXXXX has been deployed and is serving 100 percent`。URL は不変（IAP 経由のみ到達）。
 - **初回のみ** env を投入（以後は継承）：`--env-vars-file env.yaml` に
   `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_DRIVE_REFRESH_TOKEN`(RW) / `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `REPORT_LINK_SECRET` / `DRIVE_PROXY_SERVER_SECRET`（`env.yaml` は Git 管理外）。
