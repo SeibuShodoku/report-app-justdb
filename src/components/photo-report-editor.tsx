@@ -317,6 +317,15 @@ export function PhotoReportEditor({
   const workItemsList = workItemsText.split("\n").map((s) => s.trim()).filter(Boolean);
   const coverItem = items[0];
 
+  // 印刷レイアウト＝テンプレート grid-8（縦4×横2＝8枚/A4ページ）。
+  // 写真を 8 枚ずつのページに分割し、各ページを A4 固定で描く（画面準拠をやめ環境非依存に）。
+  // 将来テンプレート（例 detail-3）を足すときは PHOTOS_PER_PAGE とクラスを切り替える。
+  const PHOTOS_PER_PAGE = 8;
+  const photoPages: EditItem[][] = [];
+  for (let i = 0; i < items.length; i += PHOTOS_PER_PAGE) {
+    photoPages.push(items.slice(i, i + PHOTOS_PER_PAGE));
+  }
+
   return (
     <section className="panel">
       <div className="inline-actions no-print">
@@ -592,53 +601,60 @@ export function PhotoReportEditor({
       {items.length === 0 ? (
         <p className="notice">このフォルダに写真がありません。</p>
       ) : (
-        <div className="photo-grid">
-          {items.map((item, index) => (
-            <figure key={item.fileId} className="photo-card">
-              <div className="print-only print-caption">
-                {index + 1}．{item.heading || `写真 ${index + 1}`}
-              </div>
-              <PhotoAnnotator
-                src={photoUrl(item.fileId, folderId, token)}
-                alt={item.heading || item.name}
-                value={item.annotations}
-                onChange={(next) => patchItem(index, { annotations: next })}
-              />
-              <div className="slot-buttons no-print">
-                <button type="button" onClick={() => move(index, -1)} disabled={index === 0}>
-                  ↑ 前へ
-                </button>
-                <button
-                  type="button"
-                  onClick={() => move(index, 1)}
-                  disabled={index === items.length - 1}
-                >
-                  ↓ 後へ
-                </button>
-              </div>
-              <figcaption className="editor-field no-print">
-                <label htmlFor={`h-${item.fileId}`}>見出し（写真 {index + 1}）</label>
-                <input
-                  id={`h-${item.fileId}`}
-                  type="text"
-                  value={item.heading}
-                  maxLength={80}
-                  placeholder={`写真 ${index + 1}`}
-                  onChange={(e) => patchItem(index, { heading: e.target.value })}
-                />
-                <label htmlFor={`n-${item.fileId}`}>所見</label>
-                <textarea
-                  id={`n-${item.fileId}`}
-                  value={item.annotationNote}
-                  maxLength={500}
-                  placeholder="所見（任意）"
-                  onChange={(e) => patchItem(index, { annotationNote: e.target.value })}
-                />
-                {item.annotations.length > 0 ? (
-                  <p className="notice no-print">注記 {item.annotations.length} 件（保存に含まれます）</p>
-                ) : null}
-              </figcaption>
-            </figure>
+        <div className="photo-grid tmpl-grid-8">
+          {photoPages.map((pageItems, pageIndex) => (
+            <div className="photo-page" key={pageIndex}>
+              {pageItems.map((item, j) => {
+                const index = pageIndex * PHOTOS_PER_PAGE + j;
+                return (
+                  <figure key={item.fileId} className="photo-card">
+                    <div className="print-only print-caption">
+                      {index + 1}．{item.heading || `写真 ${index + 1}`}
+                    </div>
+                    <PhotoAnnotator
+                      src={photoUrl(item.fileId, folderId, token)}
+                      alt={item.heading || item.name}
+                      value={item.annotations}
+                      onChange={(next) => patchItem(index, { annotations: next })}
+                    />
+                    <div className="slot-buttons no-print">
+                      <button type="button" onClick={() => move(index, -1)} disabled={index === 0}>
+                        ↑ 前へ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => move(index, 1)}
+                        disabled={index === items.length - 1}
+                      >
+                        ↓ 後へ
+                      </button>
+                    </div>
+                    <figcaption className="editor-field no-print">
+                      <label htmlFor={`h-${item.fileId}`}>見出し（写真 {index + 1}）</label>
+                      <input
+                        id={`h-${item.fileId}`}
+                        type="text"
+                        value={item.heading}
+                        maxLength={80}
+                        placeholder={`写真 ${index + 1}`}
+                        onChange={(e) => patchItem(index, { heading: e.target.value })}
+                      />
+                      <label htmlFor={`n-${item.fileId}`}>所見</label>
+                      <textarea
+                        id={`n-${item.fileId}`}
+                        value={item.annotationNote}
+                        maxLength={500}
+                        placeholder="所見（任意）"
+                        onChange={(e) => patchItem(index, { annotationNote: e.target.value })}
+                      />
+                      {item.annotations.length > 0 ? (
+                        <p className="notice no-print">注記 {item.annotations.length} 件（保存に含まれます）</p>
+                      ) : null}
+                    </figcaption>
+                  </figure>
+                );
+              })}
+            </div>
           ))}
         </div>
       )}

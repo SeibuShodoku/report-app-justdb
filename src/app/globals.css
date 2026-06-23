@@ -155,6 +155,11 @@ button:disabled {
   background: #fff;
 }
 
+/* 印刷ではページ束（A4・8枚区切り）になるが、画面では透過させてカードを連続グリッドに流す。 */
+.photo-page {
+  display: contents;
+}
+
 .photo-preview {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -438,15 +443,31 @@ button.btn-secondary {
     display: block;
   }
 
-  /* 印刷は A4 幅＝2列を維持（画面用の 1 列化メディアクエリを上書き） */
+  /* 写真ページ＝A4固定レイアウト（テンプレート式・将来 detail-3 等を追加可）。
+     画面準拠の流し込みをやめ、写真を 8 枚ずつA4ページに固定割付＝環境非依存。 */
   .photo-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 10px;
+    display: block !important;
+  }
+  .photo-page {
+    break-before: page; /* 各写真ページを必ず改ページ開始（表紙の直後から） */
+    overflow: hidden;
   }
 
-  /* 表紙 */
+  /* テンプレート grid-8：縦4×横2＝8枚/ページ */
+  .tmpl-grid-8 .photo-page {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(4, 1fr);
+    gap: 6mm;
+    height: 270mm; /* A4(297mm) − 上下マージン(各12mm) の安全値 */
+  }
+  .tmpl-grid-8 .annot-img {
+    max-width: 88mm;  /* 列幅(約90mm)内 */
+    max-height: 56mm; /* 行高(約63mm)−キャプション 内 */
+  }
+
+  /* 表紙（先頭ページ。次の写真ページが break-before で改ページするので break-after は付けない＝二重改ページ防止） */
   .print-cover {
-    break-after: page;
     text-align: center;
   }
   .cover-title {
@@ -498,11 +519,35 @@ button.btn-secondary {
   }
   .photo-card {
     border: none;
-    padding: 0 0 6px;
+    padding: 0;
+    display: grid;
+    grid-template-rows: auto 1fr; /* キャプション＋写真領域 */
+    min-height: 0;
+    overflow: hidden;
+  }
+  /* 写真領域：固定セル内に縦横比を保って収める。注記SVGは viewBox 連動で写真にピタリ重なる
+     （wrap が画像にシュリンクラップ＝SVG=画像ボックス）。 */
+  .photo-card .annot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    height: 100%;
+    min-height: 0;
   }
   .annot-wrap {
     border: none;
     border-radius: 0;
+    display: inline-block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+  }
+  .annot-img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
   }
 
   /* 最終ページ：概要／内容／免責 */
