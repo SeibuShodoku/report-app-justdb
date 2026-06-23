@@ -27,7 +27,7 @@
 - `architecture/overview.md`: 全体像（役割分担・データフロー・保管・統合戦略）
 - `architecture/slack-photo-report-architecture.md`: **写真報告書システム 統合アーキ（現況の正本）**。Cloud Run/IAP・VMワーカー・案件ダイジェスト統合まで
 - `architecture/slack-photo-report-simple.md`: 上記の**簡易版**（4ステップ・プレーンASCII・説明用）
-- `architecture/justdb-supabase-integration.md`: JUST.DB連携・カスケード・同期・書き戻し
+- `architecture/justdb-supabase-integration.md`: JUST.DB連携（原則・3レーン・API予算）。**報告書サイトは read-only＝陳列(JSON)、書き戻し(Lane C)は将来の Schedule/終了報告へ移設**
 - `architecture/repository-structure.md`: リポジトリ構成（現況）
 
 ## 3. Runbook / デプロイ
