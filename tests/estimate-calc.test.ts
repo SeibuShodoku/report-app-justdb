@@ -120,6 +120,15 @@ describe("calcLine（一般施工金額計算）", () => {
     );
     expect(r.laborCost).toBe(15312); // 5800 × 0.33 × 8（生の0.3333だと15466で不一致）
   });
+
+  it("薬剤掛率は品目固有(販売掛率)を優先する（3.2なら原価=売価/3.2）", () => {
+    const r = calcLine(
+      { mode: "general", costCoefficient: 0.3, chemicalUnitPrice: 100, chemicalQty: 1, count: 1, chemicalMarkup: 3.2 },
+      settings
+    );
+    expect(r.chemicalSale).toBe(100); // round(100 × 1)
+    expect(r.chemicalCost).toBe(31); // round(100 ÷ 3.2)=round(31.25)
+  });
 });
 
 describe("calcLine（シロアリ坪単価計算）", () => {

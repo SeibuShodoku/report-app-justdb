@@ -67,6 +67,8 @@ export interface EstimateLineInput {
   chemicalUnitPrice?: number;
   /** 薬剤使用量 */
   chemicalQty?: number;
+  /** 薬剤係数（売価÷係数＝原価）。販売価格表の「販売掛率」を品目ごとに渡す（1.6 / 3.2 等）。未指定は設定の既定。 */
+  chemicalMarkup?: number;
 
   // --- 労務 ---
   /** 施工時間（h, 小数）。内部で2桁に丸めてから乗算（＝JUST.DB の「施工時間変換」）。 */
@@ -191,7 +193,9 @@ export function calcLine(input: EstimateLineInput, settings: EstimateSettings): 
     const lineDetail = roundTo((input.chemicalUnitPrice ?? 0) * (input.chemicalQty ?? 0), 0);
     chemicalSale = lineDetail * count;
   }
-  const chemicalCost = chemicalSale > 0 ? roundTo(chemicalSale / settings.chemicalMarkup, 0) : 0;
+  // 掛率は品目固有（販売掛率）が最優先。無ければ設定の既定。
+  const markup = input.chemicalMarkup ?? settings.chemicalMarkup;
+  const chemicalCost = chemicalSale > 0 && markup > 0 ? roundTo(chemicalSale / markup, 0) : 0;
 
   // 施工コスト（原価合計）
   const constructionCost = chemicalCost + laborCost + travelCost + reportFee;
