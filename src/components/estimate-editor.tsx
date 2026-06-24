@@ -48,7 +48,6 @@ type EditorLine = {
   laborM: string; // 施工時間（分）
   workers: string; // 作業人数
   laborSurcharge: string; // 割増料金係数（施工人件費に効く）
-  travelKm: string; // 移動距離
   count: string; // 作業回数
   hazardFactor: string; // 床下・高所・特殊作業係数
   reportFee: string; // 報告書作成費用（固定選択）
@@ -153,7 +152,6 @@ function newLine(defaults: { costCoefficient: number }): EditorLine {
     laborM: "0",
     workers: "1",
     laborSurcharge: "1",
-    travelKm: "",
     count: "1",
     hazardFactor: "0.1",
     reportFee: "0",
@@ -167,7 +165,7 @@ function newLine(defaults: { costCoefficient: number }): EditorLine {
     priceOverride: "",
     discount: "",
     collapsed: false,
-    statusOpen: true
+    statusOpen: false
   };
 }
 
@@ -195,6 +193,13 @@ function chemListSubtotal(l: EditorLine): number {
   }, 0);
 }
 
+/** 粗利率の健全性で色クラスを返す（赤字=赤／薄利=橙／健全=緑）。 */
+function marginClass(rate: number): string {
+  if (rate < 0) return "gm-bad";
+  if (rate < 0.25) return "gm-mid";
+  return "gm-good";
+}
+
 /** 施工時間変換（時間→2桁丸め）。 */
 function laborHoursOf(l: EditorLine): number {
   const h = (numOrUndef(l.laborH) ?? 0) + (numOrUndef(l.laborM) ?? 0) / 60;
@@ -220,7 +225,7 @@ function HintCell({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
-function toInput(l: EditorLine): EstimateLineInput {
+function toInput(l: EditorLine, travelKm: number | undefined): EstimateLineInput {
   const h = numOrUndef(l.laborH);
   const m = numOrUndef(l.laborM);
   return {
@@ -235,7 +240,7 @@ function toInput(l: EditorLine): EstimateLineInput {
     laborHours: h != null || m != null ? (h ?? 0) + (m ?? 0) / 60 : undefined,
     workers: numOrUndef(l.workers),
     laborSurcharge: numOrUndef(l.laborSurcharge),
-    travelKm: numOrUndef(l.travelKm),
+    travelKm,
     hazardFactor: numOrUndef(l.hazardFactor),
     reportFee: numOrUndef(l.reportFee),
     tsubo: numOrUndef(l.tsubo),
@@ -257,6 +262,7 @@ export function EstimateEditor({ settings, products, today }: Props) {
   const [customer, setCustomer] = useState("");
   const [site, setSite] = useState("");
   const [subject, setSubject] = useState("");
+  const [travelKm, setTravelKm] = useState(""); // 移動距離は基本情報（全明細に適用）
   const [lines, setLines] = useState<EditorLine[]>(() => [newLine({ costCoefficient: coOptions[0] })]);
 
   // 中分類は products の並び（sort_order）を保持（アルファベット順にしない）。
@@ -272,7 +278,10 @@ export function EstimateEditor({ settings, products, today }: Props) {
     return out;
   }, [products]);
 
-  const calc = useMemo(() => calcEstimate(lines.map(toInput), settings), [lines, settings]);
+  const calc = useMemo(
+    () => calcEstimate(lines.map((l) => toInput(l, numOrUndef(travelKm))), settings),
+    [lines, settings, travelKm]
+  );
 
   function updateLine(id: string, patch: Partial<EditorLine>) {
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -348,6 +357,10 @@ export function EstimateEditor({ settings, products, today }: Props) {
           <label className="est-field">
             <span className="est-label">件名（見積内容）</span>
             <input value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </label>
+          <label className="est-field">
+            <span className="est-label">移動距離（km・全明細に適用）</span>
+            <input type="number" min={0} step="any" value={travelKm} onChange={(e) => setTravelKm(e.target.value)} />
           </label>
         </div>
       </section>
@@ -513,7 +526,7 @@ export function EstimateEditor({ settings, products, today }: Props) {
                       </>
                     ) : null}
 
-                    <div className="est-row-2">
+                    <div className="est-row-3">
                       <div className="est-field">
                         <span className="est-label">施工時間</span>
                         <div className="est-time">
@@ -536,13 +549,6 @@ export function EstimateEditor({ settings, products, today }: Props) {
                         </div>
                       </div>
                       <label className="est-field">
-                        <span className="est-label">移動距離（km）</span>
-                        <input type="number" min={0} step="any" value={l.travelKm} onChange={(e) => updateLine(l.id, { travelKm: e.target.value })} />
-                      </label>
-                    </div>
-
-                    <div className="est-row-3">
-                      <label className="est-field">
                         <span className="est-label">作業人数</span>
                         <input type="number" min={0} step={1} value={l.workers} onChange={(e) => updateLine(l.id, { workers: e.target.value })} />
                       </label>
@@ -550,6 +556,9 @@ export function EstimateEditor({ settings, products, today }: Props) {
                         <span className="est-label">作業回数</span>
                         <input type="number" min={1} step={1} value={l.count} onChange={(e) => updateLine(l.id, { count: e.target.value })} />
                       </label>
+                    </div>
+
+                    <div className="est-row-3">
                       <label className="est-field">
                         <span className="est-label">床下・高所・特殊作業</span>
                         <select value={l.hazardFactor} onChange={(e) => updateLine(l.id, { hazardFactor: e.target.value })}>
@@ -557,9 +566,6 @@ export function EstimateEditor({ settings, products, today }: Props) {
                           <option value="1">あり（床下・高所・特殊）</option>
                         </select>
                       </label>
-                    </div>
-
-                    <div className="est-row-3">
                       <label className="est-field">
                         <span className="est-label">報告書作成費用</span>
                         <select value={l.reportFee} onChange={(e) => updateLine(l.id, { reportFee: e.target.value })}>
@@ -580,19 +586,19 @@ export function EstimateEditor({ settings, products, today }: Props) {
                           ))}
                         </select>
                       </label>
+                    </div>
+
+                    <div className="est-row-3">
                       <label className="est-field">
-                        <span className="est-label">原価係数</span>
+                        <span className="est-label">粗利率（標準価格の利益率）</span>
                         <select value={l.costCoefficient} onChange={(e) => updateLine(l.id, { costCoefficient: e.target.value })}>
                           {coOptions.map((c) => (
                             <option key={c} value={String(c)}>
-                              {c}
+                              粗利率 {Math.round((1 - c) * 100)}%
                             </option>
                           ))}
                         </select>
                       </label>
-                    </div>
-
-                    <div className="est-row-2">
                       <label className="est-field">
                         <span className="est-label">見積金額（空欄＝標準価格 {yen(r.standardPrice)}）</span>
                         <input
@@ -621,7 +627,8 @@ export function EstimateEditor({ settings, products, today }: Props) {
                         {l.statusOpen ? "▼ 計算ステータス" : "▶ 計算ステータス"}
                       </button>
                       <span className="est-chems-total">
-                        標準価格 {yen(r.standardPrice)}／見積金額 {yen(r.amount)}／粗利率 {pct(r.grossMarginRate)}
+                        標準価格 {yen(r.standardPrice)}／見積金額 {yen(r.amount)}／粗利率{" "}
+                        <strong className={marginClass(r.grossMarginRate)}>{pct(r.grossMarginRate)}</strong>
                       </span>
                     </div>
                     {l.statusOpen ? (

@@ -485,6 +485,17 @@ button.btn-secondary {
   line-height: 1.45;
 }
 
+/* 粗利率の健全性カラー */
+.gm-good {
+  color: #047857;
+}
+.gm-mid {
+  color: #b45309;
+}
+.gm-bad {
+  color: #b91c1c;
+}
+
 .est-totals {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
