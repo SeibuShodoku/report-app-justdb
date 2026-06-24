@@ -129,6 +129,25 @@ describe("calcLine（一般施工金額計算）", () => {
     expect(r.chemicalSale).toBe(100); // round(100 × 1)
     expect(r.chemicalCost).toBe(31); // round(100 ÷ 3.2)=round(31.25)
   });
+
+  it("薬剤は1明細に複数（明細フィールド）＝各行を行別の掛率で原価逆算して合算", () => {
+    const r = calcLine(
+      {
+        mode: "general",
+        costCoefficient: 0.5,
+        count: 1,
+        chemicals: [
+          { unitPrice: 100, qty: 1, markup: 1.6 },
+          { unitPrice: 200, qty: 2, markup: 3.2 }
+        ]
+      },
+      settings
+    );
+    expect(r.chemicalSale).toBe(500); // 100×1 ＋ round(200×2)=400
+    expect(r.chemicalCost).toBe(188); // round(100/1.6)=63 ＋ round(400/3.2)=125
+    expect(r.constructionCost).toBe(188); // 労務0・移動0
+    expect(r.standardPrice).toBe(376); // 188 ÷ 0.5
+  });
 });
 
 describe("calcLine（シロアリ坪単価計算）", () => {

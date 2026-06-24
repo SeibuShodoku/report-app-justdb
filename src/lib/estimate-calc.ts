@@ -54,6 +54,16 @@ export interface EstimateSettings {
 /** 見積計算モード。一般施工金額計算 / シロアリ坪単価計算。 */
 export type EstimateCalcMode = "general" | "termiteTsubo";
 
+/** 明細内の薬剤1行（明細フィールド＝縦持ちサブテーブル。1明細に複数ぶら下がる）。 */
+export interface EstimateChemicalInput {
+  /** 薬剤単価（売価, 円/単位） */
+  unitPrice?: number;
+  /** 薬剤使用量 */
+  qty?: number;
+  /** 薬剤係数（販売掛率。売価÷係数＝原価。未指定は設定の既定） */
+  markup?: number;
+}
+
 /** 明細1行の入力（担当が入れる物理量＋選択）。 */
 export interface EstimateLineInput {
   mode: EstimateCalcMode;
@@ -62,12 +72,14 @@ export interface EstimateLineInput {
   /** 作業回数（人件費・移動・一般薬剤に掛かる）。既定 1。 */
   count?: number;
 
-  // --- 薬剤（一般モード。販売価格表＝売価単価を引く） ---
-  /** 薬剤単価（売価, 円/単位） */
+  // --- 薬剤（明細フィールド＝1明細に複数。販売価格表＝売価単価を引く） ---
+  /** 薬剤明細（複数可）。各行 使用量×単価で売価、原価は行ごとの掛率で逆算して合算。 */
+  chemicals?: EstimateChemicalInput[];
+  /** @deprecated 単一薬剤の後方互換（1要素として畳み込む）。新規は chemicals[] を使う。 */
   chemicalUnitPrice?: number;
-  /** 薬剤使用量 */
+  /** @deprecated chemicals[] を使う。 */
   chemicalQty?: number;
-  /** 薬剤係数（売価÷係数＝原価）。販売価格表の「販売掛率」を品目ごとに渡す（1.6 / 3.2 等）。未指定は設定の既定。 */
+  /** @deprecated chemicals[] を使う。 */
   chemicalMarkup?: number;
 
   // --- 労務 ---
@@ -93,6 +105,8 @@ export interface EstimateLineInput {
   tsuboUnitPrice?: number;
   /** 防蟻剤の売価坪単価（薬剤ごと。原価は ÷係数で算入） */
   termiteChemTsuboPrice?: number;
+  /** 防蟻剤の販売掛率（未指定は設定の既定） */
+  termiteChemMarkup?: number;
 
   // --- 売価の手調整 ---
   /** 見積金額の手入力（指定時は標準価格／坪単価計算を上書き） */
@@ -183,19 +197,34 @@ export function calcLine(input: EstimateLineInput, settings: EstimateSettings): 
   const laborCost = settings.laborUnitPrice * hours * workers * count;
   const travelCost = settings.travelUnitPrice * (input.travelKm ?? 0) * count;
 
-  // 薬剤（売価→原価）。モードで売価の出所が変わる。
-  let chemicalSale: number;
-  if (input.mode === "termiteTsubo") {
-    // シロアリ：防蟻剤は専用フィールド（売価坪単価 × 坪数）。薬剤明細とは別。
-    chemicalSale = roundTo((input.termiteChemTsuboPrice ?? 0) * (input.tsubo ?? 0), 0);
-  } else {
-    // 一般：薬剤明細 = round(売価単価 × 使用量) を回数分。
-    const lineDetail = roundTo((input.chemicalUnitPrice ?? 0) * (input.chemicalQty ?? 0), 0);
-    chemicalSale = lineDetail * count;
+  // 薬剤（明細フィールド＝複数可）。各行 round(売価単価 × 使用量) を回数分、原価は行ごとの掛率で逆算して合算。
+  // 単一フィールド（chemicalUnitPrice/Qty/Markup）は後方互換のため1要素として畳み込む。
+  const chemRows: EstimateChemicalInput[] = [...(input.chemicals ?? [])];
+  if (input.chemicalUnitPrice != null || input.chemicalQty != null) {
+    chemRows.push({
+      unitPrice: input.chemicalUnitPrice,
+      qty: input.chemicalQty,
+      markup: input.chemicalMarkup
+    });
   }
-  // 掛率は品目固有（販売掛率）が最優先。無ければ設定の既定。
-  const markup = input.chemicalMarkup ?? settings.chemicalMarkup;
-  const chemicalCost = chemicalSale > 0 && markup > 0 ? roundTo(chemicalSale / markup, 0) : 0;
+  let chemicalSale = 0;
+  let chemicalCost = 0;
+  for (const c of chemRows) {
+    const rowSale = roundTo((c.unitPrice ?? 0) * (c.qty ?? 0), 0) * count;
+    if (rowSale <= 0) continue;
+    const mk = c.markup ?? settings.chemicalMarkup;
+    chemicalSale += rowSale;
+    chemicalCost += mk > 0 ? roundTo(rowSale / mk, 0) : 0;
+  }
+  // シロアリ坪単価モード：防蟻剤は専用フィールド（売価坪単価 × 坪数）。薬剤明細とは別系統で合算。
+  if (input.mode === "termiteTsubo" && input.termiteChemTsuboPrice) {
+    const tsuboSale = roundTo(input.termiteChemTsuboPrice * (input.tsubo ?? 0), 0);
+    if (tsuboSale > 0) {
+      const mk = input.termiteChemMarkup ?? settings.chemicalMarkup;
+      chemicalSale += tsuboSale;
+      chemicalCost += mk > 0 ? roundTo(tsuboSale / mk, 0) : 0;
+    }
+  }
 
   // 施工コスト（原価合計）
   const constructionCost = chemicalCost + laborCost + travelCost + reportFee;
