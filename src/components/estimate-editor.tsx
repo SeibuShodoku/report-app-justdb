@@ -54,8 +54,9 @@ type EditorLine = {
   reportFee: string; // 報告書作成費用（固定選択）
   tsubo: string; // 坪数（シロアリ）
   tsuboUnitPrice: string; // 見積坪単価（シロアリ・売価）
-  termiteChemId: string; // 選択中の防蟻剤（表示用）
-  termiteChemTsuboPrice: string; // 防蟻剤坪単価（シロアリ・薬剤から）
+  termitePlan: string; // 選択中の坪単価プラン（TERMITE_PLANS の index）
+  termiteChemName: string; // 防蟻剤名（プランから・表示用）
+  termiteChemTsuboPrice: string; // 防蟻剤坪単価（売価/坪）
   termiteChemMarkup: string; // 防蟻剤の販売掛率
   costCoefficient: string; // 原価係数（選択）
   priceOverride: string; // 見積金額の手入力（数字のみ保持）
@@ -100,6 +101,30 @@ const SURCHARGE_OPTIONS = [
   { v: "1.5", label: "深夜" }
 ];
 
+/** シロアリ防蟻剤：売価/坪 → 薬剤名。原価は 売価 ÷ 掛率(1.6)。 */
+const TERMITE_CHEMS: Record<string, string> = {
+  "1611": "エディクラ",
+  "1768": "オプティガード",
+  "1989": "タケロック",
+  "3162": "天然ピレトリンMC"
+};
+const TERMITE_CHEM_MARKUP = "1.6";
+/** 施工プラン：見積坪単価（坪数に掛ける金額）× 施工種別 → 紐づく防蟻剤売価。 */
+const TERMITE_PLANS: { tsuboPrice: number; type: string; chemSale: number }[] = [
+  { tsuboPrice: 8000, type: "木部＋土壌", chemSale: 1611 },
+  { tsuboPrice: 2400, type: "新築木部のみ", chemSale: 1611 },
+  { tsuboPrice: 3400, type: "新築土壌込", chemSale: 1611 },
+  { tsuboPrice: 8240, type: "木部＋土壌", chemSale: 1768 },
+  { tsuboPrice: 2500, type: "新築木部のみ", chemSale: 1768 },
+  { tsuboPrice: 3500, type: "新築土壌込", chemSale: 1768 },
+  { tsuboPrice: 8800, type: "木部＋土壌", chemSale: 1989 },
+  { tsuboPrice: 3000, type: "新築木部のみ", chemSale: 1989 },
+  { tsuboPrice: 4000, type: "新築土壌込", chemSale: 1989 },
+  { tsuboPrice: 11000, type: "木部＋土壌", chemSale: 3162 },
+  { tsuboPrice: 3600, type: "新築木部のみ", chemSale: 3162 },
+  { tsuboPrice: 4600, type: "新築土壌込", chemSale: 3162 }
+];
+
 const HOUR_OPTS = Array.from({ length: 13 }, (_, i) => i); // 0〜12時間
 const MIN_OPTS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
@@ -133,7 +158,8 @@ function newLine(defaults: { costCoefficient: number }): EditorLine {
     reportFee: "0",
     tsubo: "",
     tsuboUnitPrice: "",
-    termiteChemId: "",
+    termitePlan: "",
+    termiteChemName: "",
     termiteChemTsuboPrice: "",
     termiteChemMarkup: "",
     costCoefficient: String(defaults.costCoefficient),
@@ -210,14 +236,6 @@ export function EstimateEditor({ settings, products, today }: Props) {
     return out;
   }, [products]);
 
-  const termiteOptions = useMemo<SelectOption[]>(
-    () =>
-      products
-        .filter((p) => p.category === "シロアリ")
-        .map((p) => ({ value: p.priceTableId, label: `${p.productName}（${yen(p.saleUnitPrice)}/${p.unit ?? "単位"}）` })),
-    [products]
-  );
-
   const calc = useMemo(() => calcEstimate(lines.map(toInput), settings), [lines, settings]);
 
   function updateLine(id: string, patch: Partial<EditorLine>) {
@@ -258,16 +276,18 @@ export function EstimateEditor({ settings, products, today }: Props) {
     });
   }
 
-  function selectTermiteChem(lineId: string, priceTableId: string) {
-    const p = products.find((x) => x.priceTableId === priceTableId);
+  function selectTermitePlan(lineId: string, idxStr: string) {
+    const p = TERMITE_PLANS[Number(idxStr)];
     if (!p) {
-      updateLine(lineId, { termiteChemId: "", termiteChemTsuboPrice: "", termiteChemMarkup: "" });
+      updateLine(lineId, { termitePlan: "", termiteChemName: "" });
       return;
     }
     updateLine(lineId, {
-      termiteChemId: priceTableId,
-      termiteChemTsuboPrice: String(p.saleUnitPrice),
-      termiteChemMarkup: p.markup != null ? String(p.markup) : ""
+      termitePlan: idxStr,
+      tsuboUnitPrice: String(p.tsuboPrice),
+      termiteChemName: TERMITE_CHEMS[String(p.chemSale)] ?? "",
+      termiteChemTsuboPrice: String(p.chemSale),
+      termiteChemMarkup: TERMITE_CHEM_MARKUP
     });
   }
 
@@ -396,24 +416,39 @@ export function EstimateEditor({ settings, products, today }: Props) {
                     </div>
 
                     {isTermite ? (
-                      <div className="est-grid">
-                        <label className="est-field">
-                          <span className="est-label">坪数</span>
-                          <input type="number" min={0} step="any" value={l.tsubo} onChange={(e) => updateLine(l.id, { tsubo: e.target.value })} />
-                        </label>
-                        <label className="est-field">
-                          <span className="est-label">見積坪単価（売価/坪）</span>
-                          <input type="number" min={0} step="any" value={l.tsuboUnitPrice} onChange={(e) => updateLine(l.id, { tsuboUnitPrice: e.target.value })} />
-                        </label>
-                        <div className="est-field">
-                          <span className="est-label">防蟻剤（薬剤選択→坪単価に反映）</span>
-                          <SearchSelect value={l.termiteChemId} options={termiteOptions} placeholder="防蟻剤を検索／選択" onChange={(v) => selectTermiteChem(l.id, v)} />
+                      <>
+                        <div className="est-row-2">
+                          <label className="est-field">
+                            <span className="est-label">坪数</span>
+                            <input type="number" min={0} step="any" value={l.tsubo} onChange={(e) => updateLine(l.id, { tsubo: e.target.value })} />
+                          </label>
+                          <label className="est-field">
+                            <span className="est-label">施工プラン（坪単価）</span>
+                            <select value={l.termitePlan} onChange={(e) => selectTermitePlan(l.id, e.target.value)}>
+                              <option value="">（プランを選択）</option>
+                              {TERMITE_PLANS.map((p, idx) => (
+                                <option key={idx} value={String(idx)}>
+                                  {p.type}　¥{p.tsuboPrice.toLocaleString()}/坪（{TERMITE_CHEMS[String(p.chemSale)]}）
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
-                        <label className="est-field">
-                          <span className="est-label">防蟻剤坪単価（売価/坪）</span>
-                          <input type="number" min={0} step="any" value={l.termiteChemTsuboPrice} onChange={(e) => updateLine(l.id, { termiteChemTsuboPrice: e.target.value })} />
-                        </label>
-                      </div>
+                        <div className="est-row-3">
+                          <label className="est-field">
+                            <span className="est-label">見積坪単価（売価/坪）</span>
+                            <input type="number" min={0} step="any" value={l.tsuboUnitPrice} onChange={(e) => updateLine(l.id, { tsuboUnitPrice: e.target.value })} />
+                          </label>
+                          <div className="est-field">
+                            <span className="est-label">防蟻剤（プランで自動）</span>
+                            <input value={l.termiteChemName} readOnly placeholder="プランを選択" />
+                          </div>
+                          <label className="est-field">
+                            <span className="est-label">防蟻剤坪単価（売価/坪）</span>
+                            <input type="number" min={0} step="any" value={l.termiteChemTsuboPrice} onChange={(e) => updateLine(l.id, { termiteChemTsuboPrice: e.target.value })} />
+                          </label>
+                        </div>
+                      </>
                     ) : null}
 
                     <div className="est-row-2">
