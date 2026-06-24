@@ -76,7 +76,11 @@ const WORK_TYPES = [
   "衛生（消毒など）",
   "その他"
 ] as const;
-const WORK_TYPE_OPTIONS: SelectOption[] = WORK_TYPES.map((t) => ({ value: t, label: t }));
+// シロアリ坪単価計算のときだけ業務タイプを「シロアリ新築／既築」に絞る（一般ではこの2つを除外）。
+const TERMITE_WORK_TYPES: string[] = ["シロアリ新築", "シロアリ既築"];
+const GENERAL_WORK_TYPES: string[] = WORK_TYPES.filter((t) => !TERMITE_WORK_TYPES.includes(t));
+const GENERAL_WORK_TYPE_OPTIONS: SelectOption[] = GENERAL_WORK_TYPES.map((t) => ({ value: t, label: t }));
+const TERMITE_WORK_TYPE_OPTIONS: SelectOption[] = TERMITE_WORK_TYPES.map((t) => ({ value: t, label: t }));
 
 /** 報告書作成費用（固定。金額＝作成時間の目安）。 */
 const REPORT_FEE_OPTIONS = [
@@ -299,6 +303,7 @@ export function EstimateEditor({ settings, products, today }: Props) {
           {lines.map((l, i) => {
             const r: CalculatedLine = calc.lines[i];
             const isTermite = l.mode === "termiteTsubo";
+            const workTypeOptions = isTermite ? TERMITE_WORK_TYPE_OPTIONS : GENERAL_WORK_TYPE_OPTIONS;
             return (
               <div key={l.id} className="est-line">
                 <div className={l.collapsed ? "est-line-head collapsed" : "est-line-head"}>
@@ -321,17 +326,26 @@ export function EstimateEditor({ settings, products, today }: Props) {
                 {!l.collapsed && (
                   <div className="est-line-body">
                     <div className="est-row-2">
-                      <div className="est-field">
-                        <span className="est-label">業務タイプ</span>
-                        <SearchSelect value={l.workType} options={WORK_TYPE_OPTIONS} onChange={(v) => updateLine(l.id, { workType: v })} />
-                      </div>
                       <label className="est-field">
                         <span className="est-label">計算方式</span>
-                        <select value={l.mode} onChange={(e) => updateLine(l.id, { mode: e.target.value as EstimateCalcMode })}>
+                        <select
+                          value={l.mode}
+                          onChange={(e) => {
+                            const mode = e.target.value as EstimateCalcMode;
+                            const allowed = mode === "termiteTsubo" ? TERMITE_WORK_TYPES : GENERAL_WORK_TYPES;
+                            const patch: Partial<EditorLine> = { mode };
+                            if (l.workType && !allowed.includes(l.workType)) patch.workType = ""; // 新方式に無い業務タイプはクリア
+                            updateLine(l.id, patch);
+                          }}
+                        >
                           <option value="general">一般施工金額計算</option>
                           <option value="termiteTsubo">シロアリ坪単価計算</option>
                         </select>
                       </label>
+                      <div className="est-field">
+                        <span className="est-label">業務タイプ</span>
+                        <SearchSelect value={l.workType} options={workTypeOptions} onChange={(v) => updateLine(l.id, { workType: v })} />
+                      </div>
                     </div>
 
                     <label className="est-field">
