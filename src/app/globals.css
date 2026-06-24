@@ -301,6 +301,172 @@ button.btn-secondary {
   margin: 0;
 }
 
+/* ===== 見積エディタ（リング2） ===== */
+.estimate-editor {
+  display: grid;
+  gap: 20px;
+}
+.estimate-editor h2 {
+  margin: 8px 0 0;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--accent);
+  color: var(--accent);
+}
+.est-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+.est-field {
+  display: grid;
+  gap: 4px;
+}
+.est-field > .est-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.est-line {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+.est-line-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #f3faf9, #ffffff);
+  border-bottom: 1px solid var(--border);
+}
+.est-line-head .est-no {
+  font-weight: 700;
+  color: var(--muted);
+}
+.est-line-head .est-type {
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: #e7f5f2;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.est-line-head .est-amount {
+  margin-left: auto;
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+.est-line-head button,
+.est-chem-row button,
+.est-chems .inline-actions button {
+  width: auto;
+}
+.est-line-body {
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+}
+
+.est-chems {
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fcfdfd;
+  display: grid;
+  gap: 10px;
+}
+.est-chems-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.est-chem-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(170px, 2fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+.est-qty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.est-qty input {
+  width: 5rem;
+}
+.est-qty .est-unit {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.est-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.est-time select {
+  width: auto;
+}
+.est-time span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.est-result {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f0faf8;
+  border: 1px solid #cfe9e4;
+}
+.est-result .cell,
+.est-totals .cell {
+  display: grid;
+  gap: 2px;
+}
+.est-result .k {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.est-result .v {
+  font-weight: 700;
+}
+
+.est-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ecfaf7, #ffffff);
+  border: 1px solid #cfe9e4;
+}
+.est-totals .k {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.est-totals .v {
+  font-weight: 800;
+  font-size: 1.15rem;
+}
+.est-totals .v.total {
+  color: var(--accent);
+}
+
+.btn-secondary {
+  background: #fff;
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover {
+  background: #f0faf8;
+}
+
 /* 印刷(PDF)専用ブロックは画面では隠す（@media print で表示）。 */
 .print-only {
   display: none;
