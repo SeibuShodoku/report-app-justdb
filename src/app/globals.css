@@ -434,6 +434,7 @@ button.btn-secondary {
 .est-time {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
 .est-time select {
@@ -559,11 +560,14 @@ button.btn-secondary {
   .panel {
     padding: 16px;
   }
+  /* 表紙グリッドと薬剤行は幅が要るので1カラムに畳む。横並びペア(est-row-2/3)はモバイルでも横並び維持。 */
   .est-grid,
-  .est-row-2,
-  .est-row-3,
   .est-chem-row {
     grid-template-columns: 1fr;
+  }
+  .est-row-2,
+  .est-row-3 {
+    gap: 8px;
   }
   .est-chem-row button {
     justify-self: start;
