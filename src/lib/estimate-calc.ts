@@ -140,6 +140,8 @@ export interface CalculatedLine {
   safetyCost: number;
   /** 標準価格（施工コスト ÷ 原価係数。見積金額の既定値） */
   standardPrice: number;
+  /** 標準価格(薬剤吸収)（薬剤は売価のまま乗せ、労務等のみ原価係数で割り戻す変種） */
+  standardPriceChemAbsorbed: number;
   /** 見積金額（標準価格／坪単価計算 or 手調整） */
   amount: number;
   /** 値引額 */
@@ -252,6 +254,11 @@ export function calcLine(input: EstimateLineInput, settings: EstimateSettings): 
   // 標準価格（原価 ÷ 原価係数）。見積金額の既定。
   const standardPrice =
     input.costCoefficient > 0 ? roundTo(constructionCost / input.costCoefficient, 0) : 0;
+  // 標準価格(薬剤吸収)：薬剤は売価のまま乗せ、それ以外（労務・移動・報告書）だけ原価係数で割り戻す変種。
+  const standardPriceChemAbsorbed =
+    input.costCoefficient > 0
+      ? roundTo((constructionCost - chemicalCost) / input.costCoefficient, 0) + chemicalSale
+      : 0;
 
   // 見積金額：シロアリは坪単価×坪、一般は標準価格。いずれも手調整(priceOverride)が最優先。
   const tsuboPrice = (input.tsuboUnitPrice ?? 0) * (input.tsubo ?? 0);
@@ -277,6 +284,7 @@ export function calcLine(input: EstimateLineInput, settings: EstimateSettings): 
     overhead,
     safetyCost,
     standardPrice,
+    standardPriceChemAbsorbed,
     amount,
     discount,
     amountAfterDiscount,

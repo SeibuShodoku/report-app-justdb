@@ -62,6 +62,7 @@ type EditorLine = {
   priceOverride: string; // 見積金額の手入力（数字のみ保持）
   discount: string; // 値引額（数字のみ保持）
   collapsed: boolean; // 明細の畳み状態
+  statusOpen: boolean; // 計算ステータス表示
 };
 
 /** 業務タイプ（見積明細の分類。固定選択肢＝この順で表示）。 */
@@ -154,7 +155,7 @@ function newLine(defaults: { costCoefficient: number }): EditorLine {
     laborSurcharge: "1",
     travelKm: "",
     count: "1",
-    hazardFactor: "1",
+    hazardFactor: "0.1",
     reportFee: "0",
     tsubo: "",
     tsuboUnitPrice: "",
@@ -165,7 +166,8 @@ function newLine(defaults: { costCoefficient: number }): EditorLine {
     costCoefficient: String(defaults.costCoefficient),
     priceOverride: "",
     discount: "",
-    collapsed: false
+    collapsed: false,
+    statusOpen: true
   };
 }
 
@@ -182,6 +184,21 @@ function chemListTotal(l: EditorLine): number {
     const q = numOrUndef(c.qty) ?? 0;
     return s + Math.round(up * q) * count;
   }, 0);
+}
+
+/** 薬剤売価_集計（回数前。Σ round(単価×使用量)）。 */
+function chemListSubtotal(l: EditorLine): number {
+  return l.chemicals.reduce((s, c) => {
+    const up = numOrUndef(c.unitPrice) ?? 0;
+    const q = numOrUndef(c.qty) ?? 0;
+    return s + Math.round(up * q);
+  }, 0);
+}
+
+/** 施工時間変換（時間→2桁丸め）。 */
+function laborHoursOf(l: EditorLine): number {
+  const h = (numOrUndef(l.laborH) ?? 0) + (numOrUndef(l.laborM) ?? 0) / 60;
+  return Math.round(h * 100) / 100;
 }
 
 function toInput(l: EditorLine): EstimateLineInput {
@@ -515,10 +532,10 @@ export function EstimateEditor({ settings, products, today }: Props) {
                         <input type="number" min={1} step={1} value={l.count} onChange={(e) => updateLine(l.id, { count: e.target.value })} />
                       </label>
                       <label className="est-field">
-                        <span className="est-label">床下・高所・特殊作業係数</span>
+                        <span className="est-label">床下・高所・特殊作業</span>
                         <select value={l.hazardFactor} onChange={(e) => updateLine(l.id, { hazardFactor: e.target.value })}>
-                          <option value="1">1（標準）</option>
-                          <option value="0.1">0.1</option>
+                          <option value="0.1">なし（基本）</option>
+                          <option value="1">あり（床下・高所・特殊）</option>
                         </select>
                       </label>
                     </div>
@@ -579,37 +596,38 @@ export function EstimateEditor({ settings, products, today }: Props) {
                       </label>
                     </div>
 
-                    {/* ライブ計算結果 */}
-                    <div className="est-result">
-                      <div className="cell">
-                        <span className="k">薬剤 売価/原価</span>
-                        <span className="v">{yen(r.chemicalSale)} / {yen(r.chemicalCost)}</span>
-                      </div>
-                      <div className="cell">
-                        <span className="k">施工コスト</span>
-                        <span className="v">{yen(r.constructionCost)}</span>
-                      </div>
-                      <div className="cell">
-                        <span className="k">標準価格</span>
-                        <span className="v">{yen(r.standardPrice)}</span>
-                      </div>
-                      <div className="cell">
-                        <span className="k">見積金額</span>
-                        <span className="v">{yen(r.amount)}</span>
-                      </div>
-                      <div className="cell">
-                        <span className="k">粗利額 / 粗利率</span>
-                        <span className="v">{yen(r.grossProfit)} / {pct(r.grossMarginRate)}</span>
-                      </div>
-                      <div className="cell">
-                        <span className="k">割増分人件費</span>
-                        <span className="v">{yen(r.laborSurchargeExtra)}</span>
-                      </div>
-                      <div className="cell">
-                        <span className="k">経費控除後（参考）</span>
-                        <span className="v">{yen(r.netAfterExpenses)}</span>
-                      </div>
+                    {/* 計算ステータス（JUST.DB 照合用） */}
+                    <div className="inline-actions">
+                      <button type="button" className="btn-secondary" onClick={() => updateLine(l.id, { statusOpen: !l.statusOpen })}>
+                        {l.statusOpen ? "▼ 計算ステータス" : "▶ 計算ステータス"}
+                      </button>
+                      <span className="est-chems-total">
+                        標準価格 {yen(r.standardPrice)}／見積金額 {yen(r.amount)}／粗利率 {pct(r.grossMarginRate)}
+                      </span>
                     </div>
+                    {l.statusOpen ? (
+                      <div className="est-result">
+                        <div className="cell"><span className="k">薬剤売価_集計</span><span className="v">{yen(chemListSubtotal(l))}</span></div>
+                        <div className="cell"><span className="k">薬剤売価_積算</span><span className="v">{yen(r.chemicalSale)}</span></div>
+                        <div className="cell"><span className="k">薬剤原価_積算</span><span className="v">{yen(r.chemicalCost)}</span></div>
+                        <div className="cell"><span className="k">移動コスト</span><span className="v">{yen(r.travelCost)}</span></div>
+                        <div className="cell"><span className="k">施工人件費</span><span className="v">{yen(r.laborCost)}</span></div>
+                        <div className="cell"><span className="k">割増分施工人件費</span><span className="v">{yen(r.laborSurchargeExtra)}</span></div>
+                        <div className="cell"><span className="k">諸経費</span><span className="v">{yen(r.overhead)}</span></div>
+                        <div className="cell"><span className="k">労働安全衛生費</span><span className="v">{yen(r.safetyCost)}</span></div>
+                        <div className="cell"><span className="k">報告書作成費用_積算</span><span className="v">{yen(r.reportFee)}</span></div>
+                        <div className="cell"><span className="k">施工コスト</span><span className="v">{yen(r.constructionCost)}</span></div>
+                        <div className="cell"><span className="k">標準価格</span><span className="v">{yen(r.standardPrice)}</span></div>
+                        <div className="cell"><span className="k">標準価格(薬剤吸収)</span><span className="v">{yen(r.standardPriceChemAbsorbed)}</span></div>
+                        <div className="cell"><span className="k">経費控除後見積金額</span><span className="v">{yen(r.netAfterExpenses)}</span></div>
+                        <div className="cell"><span className="k">粗利額 / 粗利率</span><span className="v">{yen(r.grossProfit)} / {pct(r.grossMarginRate)}</span></div>
+                        <div className="cell"><span className="k">施工時間変換</span><span className="v">{laborHoursOf(l).toFixed(2)}</span></div>
+                        <div className="cell"><span className="k">人件費単価 / 移動単価</span><span className="v">¥{settings.laborUnitPrice.toLocaleString()} / ¥{settings.travelUnitPrice.toLocaleString()}</span></div>
+                        <div className="cell"><span className="k">諸経費率 / 労安費率</span><span className="v">{pct(settings.overheadRate)} / {pct(settings.safetyRate)}</span></div>
+                        <div className="cell"><span className="k">薬剤係数 / 消費税率</span><span className="v">{settings.chemicalMarkup} / {pct(settings.taxRate)}</span></div>
+                        <div className="cell"><span className="k">原価係数 / 床下係数</span><span className="v">{l.costCoefficient} / {l.hazardFactor}</span></div>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
