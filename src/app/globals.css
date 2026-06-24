@@ -506,6 +506,40 @@ button.btn-secondary {
   color: var(--accent);
 }
 
+/* 合計：画面下部に貼り付いてスクロール追随 */
+.est-sticky-total {
+  position: sticky;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 10px;
+  padding: 12px 18px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+.est-sticky-total .st-item {
+  display: grid;
+  gap: 2px;
+}
+.est-sticky-total .st-k {
+  font-size: 0.7rem;
+  opacity: 0.85;
+}
+.est-sticky-total .st-v {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.est-sticky-total .primary .st-v {
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
 .btn-secondary {
   background: #fff;
   color: var(--accent);

@@ -673,28 +673,25 @@ export function EstimateEditor({ settings, products, today }: Props) {
         </div>
       </section>
 
-      {/* 合計 */}
-      <section>
-        <h2>合計</h2>
-        <div className="est-totals">
-          <div className="cell">
-            <span className="k">見積本体価格</span>
-            <span className="v">{yen(calc.subtotal)}</span>
-          </div>
-          <div className="cell">
-            <span className="k">消費税（{pct(settings.taxRate)}）</span>
-            <span className="v">{yen(calc.tax)}</span>
-          </div>
-          <div className="cell">
-            <span className="k">税込見積金額</span>
-            <span className="v total">{yen(calc.total)}</span>
-          </div>
-          <div className="cell">
-            <span className="k">粗利額 / 粗利率（全体）</span>
-            <span className="v">{yen(calc.grossProfitTotal)} / {pct(calc.grossMarginRate)}</span>
-          </div>
+      {/* 合計：画面下部に貼り付いてスクロール追随 */}
+      <div className="est-sticky-total">
+        <div className="st-item">
+          <span className="st-k">見積本体価格</span>
+          <span className="st-v">{yen(calc.subtotal)}</span>
         </div>
-      </section>
+        <div className="st-item">
+          <span className="st-k">消費税（{pct(settings.taxRate)}）</span>
+          <span className="st-v">{yen(calc.tax)}</span>
+        </div>
+        <div className="st-item primary">
+          <span className="st-k">税込見積金額</span>
+          <span className="st-v">{yen(calc.total)}</span>
+        </div>
+        <div className="st-item">
+          <span className="st-k">粗利額 / 粗利率（全体）</span>
+          <span className="st-v">{yen(calc.grossProfitTotal)} / {pct(calc.grossMarginRate)}</span>
+        </div>
+      </div>
     </div>
   );
 }
