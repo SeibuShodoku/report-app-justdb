@@ -17,8 +17,9 @@
  *     薬剤明細   = round(薬剤単価[売価] × 使用量)
  *     薬剤売価   = 薬剤明細 × 作業回数
  *     薬剤原価   = round(薬剤売価 ÷ 薬剤係数)              ※販売価格表は「売価」を持つ・原価は逆算
- *     施工人件費 = 人件費単価 × round(施工時間[h], 2) × 人数 × 回数 × 割増料金係数
- *     移動コスト = 移動単価 × km × 回数
+ *     施工人件費 = ROUND(人数 × 回数 × round(施工時間[h], 2) × 人件費単価)  ※割増は含めず別建て
+ *     割増分施工人件費 = ROUNDUP(施工人件費 × (割増料金 − 1), 百円)  ※施工コストには入れない
+ *     移動コスト = 移動単価 × 人数 × 回数 × km
  *     施工コスト = 薬剤原価 + 施工人件費 + 移動コスト + 報告書作成費用
  *     諸経費     = ROUNDUP(施工コスト × 諸経費率, 百円)
  *     労安費     = ROUNDUP(労安費率 × 床下高所特殊係数 × 施工コスト, 百円)
@@ -123,9 +124,11 @@ export interface CalculatedLine {
   chemicalSale: number;
   /** 薬剤原価（= round(薬剤売価 ÷ 薬剤係数)）→ 施工コストへ */
   chemicalCost: number;
-  /** 施工人件費（× 回数） */
+  /** 施工人件費（= ROUND(人数×回数×施工時間変換×単価)。割増は含まない） */
   laborCost: number;
-  /** 移動コスト（× 回数） */
+  /** 割増分施工人件費（= ROUNDUP(施工人件費×(割増−1), 百円)。施工コストには含めない別建て） */
+  laborSurchargeExtra: number;
+  /** 移動コスト（= 移動単価×人数×回数×移動距離） */
   travelCost: number;
   /** 報告書作成費用 */
   reportFee: number;
@@ -147,6 +150,8 @@ export interface CalculatedLine {
   grossProfit: number;
   /** 粗利率（小数3桁） */
   grossMarginRate: number;
+  /** 経費控除後見積金額（診断用。見積金額−移動−薬剤売価−報告書−諸経費−割増分−労安＋値引。最終価格に非関与） */
+  netAfterExpenses: number;
 }
 
 /** 見積全体の算出結果（表紙ロールアップ）。 */
@@ -194,10 +199,13 @@ export function calcLine(input: EstimateLineInput, settings: EstimateSettings): 
   const reportFee = input.reportFee ?? 0;
   const discount = input.discount ?? 0;
 
-  // 労務・移動（両者とも回数分積算）
+  // 施工人件費 = ROUND(人数 × 回数 × 施工時間変換 × 単価)。割増は含めず別建て。
   const hours = roundTo(input.laborHours ?? 0, 2); // ＝施工時間変換
-  const laborCost = settings.laborUnitPrice * hours * workers * count * (input.laborSurcharge ?? 1);
-  const travelCost = settings.travelUnitPrice * (input.travelKm ?? 0) * count;
+  const laborCost = roundTo(workers * count * hours * settings.laborUnitPrice, 0);
+  // 割増分施工人件費 = ROUNDUP(施工人件費 × (割増料金 − 1), 百円)。施工コストには入れない。
+  const laborSurchargeExtra = roundUpTo100(laborCost * ((input.laborSurcharge ?? 1) - 1));
+  // 移動コスト = 移動単価 × 人数 × 回数 × 移動距離。
+  const travelCost = settings.travelUnitPrice * workers * count * (input.travelKm ?? 0);
 
   // 薬剤（明細フィールド＝複数可）。各行 round(売価単価 × 使用量) を回数分、原価は行ごとの掛率で逆算して合算。
   // 単一フィールド（chemicalUnitPrice/Qty/Markup）は後方互換のため1要素として畳み込む。
@@ -209,23 +217,29 @@ export function calcLine(input: EstimateLineInput, settings: EstimateSettings): 
       markup: input.chemicalMarkup
     });
   }
+  // 薬剤売価_積算 = Σ(round(単価×使用量) × 回数)。原価_積算 = ROUND(売価_積算 ÷ 係数) を掛率グループごとに1回。
+  // （JUST.DB は売価を合計してから原価を1回だけ丸める。掛率が品目で異なる場合に備え、掛率ごとに小計して丸める。）
+  const saleByMarkup = new Map<number, number>();
   let chemicalSale = 0;
-  let chemicalCost = 0;
   for (const c of chemRows) {
     const rowSale = roundTo((c.unitPrice ?? 0) * (c.qty ?? 0), 0) * count;
     if (rowSale <= 0) continue;
     const mk = c.markup ?? settings.chemicalMarkup;
     chemicalSale += rowSale;
-    chemicalCost += mk > 0 ? roundTo(rowSale / mk, 0) : 0;
+    saleByMarkup.set(mk, (saleByMarkup.get(mk) ?? 0) + rowSale);
   }
-  // シロアリ坪単価モード：防蟻剤は専用フィールド（売価坪単価 × 坪数）。薬剤明細とは別系統で合算。
+  // シロアリ坪単価モード：防蟻剤（売価坪単価 × 坪数）も売価に合算（坪で確定＝回数は掛けない）。
   if (input.mode === "termiteTsubo" && input.termiteChemTsuboPrice) {
     const tsuboSale = roundTo(input.termiteChemTsuboPrice * (input.tsubo ?? 0), 0);
     if (tsuboSale > 0) {
       const mk = input.termiteChemMarkup ?? settings.chemicalMarkup;
       chemicalSale += tsuboSale;
-      chemicalCost += mk > 0 ? roundTo(tsuboSale / mk, 0) : 0;
+      saleByMarkup.set(mk, (saleByMarkup.get(mk) ?? 0) + tsuboSale);
     }
+  }
+  let chemicalCost = 0;
+  for (const [mk, sale] of saleByMarkup) {
+    chemicalCost += mk > 0 ? roundTo(sale / mk, 0) : 0;
   }
 
   // 施工コスト（原価合計）
@@ -248,10 +262,15 @@ export function calcLine(input: EstimateLineInput, settings: EstimateSettings): 
   const grossProfit = amount - constructionCost;
   const grossMarginRate = amount > 0 ? roundTo(grossProfit / amount, 3) : 0;
 
+  // 経費控除後見積金額（診断用・最終価格に非関与）。
+  const netAfterExpenses =
+    amount - travelCost - chemicalSale - reportFee - overhead - laborSurchargeExtra - safetyCost + discount;
+
   return {
     chemicalSale,
     chemicalCost,
     laborCost,
+    laborSurchargeExtra,
     travelCost,
     reportFee,
     constructionCost,
@@ -262,7 +281,8 @@ export function calcLine(input: EstimateLineInput, settings: EstimateSettings): 
     discount,
     amountAfterDiscount,
     grossProfit,
-    grossMarginRate
+    grossMarginRate,
+    netAfterExpenses
   };
 }
 

@@ -149,12 +149,38 @@ describe("calcLine（一般施工金額計算）", () => {
     expect(r.standardPrice).toBe(376); // 188 ÷ 0.5
   });
 
-  it("割増料金係数は施工人件費に効く（深夜1.5なら労務×1.5）", () => {
+  it("割増料金は施工人件費に含めず割増分を別建て（ROUNDUP百円）", () => {
     const r = calcLine(
       { mode: "general", costCoefficient: 0.3, laborHours: 1, workers: 1, count: 1, laborSurcharge: 1.5 },
       settings
     );
-    expect(r.laborCost).toBe(8700); // 5800 × 1h × 1人 × 1回 × 1.5
+    expect(r.laborCost).toBe(5800); // ROUND(1人×1回×1h×5800)。割増は含めない
+    expect(r.laborSurchargeExtra).toBe(2900); // ROUNDUP(5800×(1.5−1), 百円)
+  });
+
+  it("移動コストは人数も掛ける（単価×人数×回数×km）", () => {
+    const r = calcLine(
+      { mode: "general", costCoefficient: 0.3, workers: 4, count: 4, travelKm: 150 },
+      settings
+    );
+    expect(r.travelCost).toBe(648000); // 270 × 4人 × 4回 × 150km（ID66 実値と一致）
+  });
+
+  it("複数薬剤(同一掛率)は売価合計してから原価を1回丸める", () => {
+    const r = calcLine(
+      {
+        mode: "general",
+        costCoefficient: 0.5,
+        count: 1,
+        chemicals: [
+          { unitPrice: 10, qty: 1, markup: 1.6 },
+          { unitPrice: 10, qty: 1, markup: 1.6 }
+        ]
+      },
+      settings
+    );
+    expect(r.chemicalSale).toBe(20);
+    expect(r.chemicalCost).toBe(13); // ROUND(20/1.6)=round(12.5)=13（行ごと丸めなら6+6=12）
   });
 });
 

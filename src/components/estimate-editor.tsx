@@ -601,6 +601,14 @@ export function EstimateEditor({ settings, products, today }: Props) {
                         <span className="k">粗利額 / 粗利率</span>
                         <span className="v">{yen(r.grossProfit)} / {pct(r.grossMarginRate)}</span>
                       </div>
+                      <div className="cell">
+                        <span className="k">割増分人件費</span>
+                        <span className="v">{yen(r.laborSurchargeExtra)}</span>
+                      </div>
+                      <div className="cell">
+                        <span className="k">経費控除後（参考）</span>
+                        <span className="v">{yen(r.netAfterExpenses)}</span>
+                      </div>
                     </div>
                   </div>
                 )}
