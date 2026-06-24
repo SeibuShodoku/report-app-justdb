@@ -324,6 +324,14 @@ export function EstimateEditor({ settings, products, today }: Props) {
             const r: CalculatedLine = calc.lines[i];
             const isTermite = l.mode === "termiteTsubo";
             const workTypeOptions = isTermite ? TERMITE_WORK_TYPE_OPTIONS : GENERAL_WORK_TYPE_OPTIONS;
+            // 業務タイプ（新築/既築）で坪単価プランを絞る。新築=新築木部のみ/新築土壌込、既築=木部＋土壌。
+            const termitePlanEntries = TERMITE_PLANS.map((p, idx) => ({ p, idx })).filter(({ p }) =>
+              l.workType === "シロアリ既築"
+                ? !p.type.startsWith("新築")
+                : l.workType === "シロアリ新築"
+                  ? p.type.startsWith("新築")
+                  : true
+            );
             return (
               <div key={l.id} className="est-line">
                 <div className={l.collapsed ? "est-line-head collapsed" : "est-line-head"}>
@@ -364,7 +372,25 @@ export function EstimateEditor({ settings, products, today }: Props) {
                       </label>
                       <div className="est-field">
                         <span className="est-label">業務タイプ</span>
-                        <SearchSelect value={l.workType} options={workTypeOptions} onChange={(v) => updateLine(l.id, { workType: v })} />
+                        <SearchSelect
+                          value={l.workType}
+                          options={workTypeOptions}
+                          onChange={(v) => {
+                            const patch: Partial<EditorLine> = { workType: v };
+                            // シロアリ：業務タイプ(新築/既築)に合わない坪単価プランはクリア
+                            if (l.mode === "termiteTsubo") {
+                              const p = TERMITE_PLANS[Number(l.termitePlan)];
+                              const ok =
+                                !!p &&
+                                (v === "シロアリ新築" ? p.type.startsWith("新築") : v === "シロアリ既築" ? !p.type.startsWith("新築") : true);
+                              if (!ok) {
+                                patch.termitePlan = "";
+                                patch.termiteChemName = "";
+                              }
+                            }
+                            updateLine(l.id, patch);
+                          }}
+                        />
                       </div>
                     </div>
 
@@ -426,7 +452,7 @@ export function EstimateEditor({ settings, products, today }: Props) {
                             <span className="est-label">施工プラン（坪単価）</span>
                             <select value={l.termitePlan} onChange={(e) => selectTermitePlan(l.id, e.target.value)}>
                               <option value="">（プランを選択）</option>
-                              {TERMITE_PLANS.map((p, idx) => (
+                              {termitePlanEntries.map(({ p, idx }) => (
                                 <option key={idx} value={String(idx)}>
                                   {p.type}　¥{p.tsuboPrice.toLocaleString()}/坪（{TERMITE_CHEMS[String(p.chemSale)]}）
                                 </option>
