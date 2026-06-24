@@ -22,6 +22,7 @@ type Row = {
   note: string | null;
   supply_list_id: string | null;
   is_active: boolean;
+  sort_order: number | null;
 };
 
 function rowToItem(r: Row): PriceBookItem {
@@ -43,14 +44,22 @@ function rowToItem(r: Row): PriceBookItem {
   };
 }
 
-/** 販売価格表（有効品目）を取得。category 指定でカテゴリ絞り込み。 */
+/**
+ * 販売価格表（有効品目）を取得。category 指定でカテゴリ絞り込み。
+ * 並びは sort_order（JUST.DB/CSV の行順）→品目名。sort_order 未設定（未マイグレ）の行は末尾扱い。
+ * ※ sort_order を ORDER 句に置くとカラム未追加時に PostgREST が失敗するため、JS 側で並べる。
+ */
 export async function listPriceBook(category?: string): Promise<PriceBookItem[]> {
   if (!supabaseConfigured()) return [];
   const cat = category?.trim();
   const filter = cat ? `&category=eq.${encodeURIComponent(cat)}` : "";
-  const rows = await sbSelect<Row>(
-    `chemical_products?is_active=eq.true${filter}&select=*&order=category,product_name`
-  );
+  const rows = await sbSelect<Row>(`chemical_products?is_active=eq.true${filter}&select=*`);
+  rows.sort((a, b) => {
+    const ao = a.sort_order ?? Number.MAX_SAFE_INTEGER;
+    const bo = b.sort_order ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    return a.product_name.localeCompare(b.product_name, "ja");
+  });
   return rows.map(rowToItem);
 }
 

@@ -111,13 +111,17 @@ if (idx.priceTableId < 0 || idx.productName < 0) {
 }
 
 const records = [];
-for (const r of rows.slice(2)) {
+const dataRows = rows.slice(2);
+for (let i = 0; i < dataRows.length; i++) {
+  const r = dataRows[i];
   const id = str(r[idx.priceTableId]);
   const name = str(r[idx.productName]);
   if (!id || !name) continue; // キー欠落・空行は飛ばす
   records.push({
     price_table_id: id,
     product_name: name,
+    sort_order: i + 1, // CSV（JUST.DB）の行順を表示順として保持
+
     report_name: str(r[idx.reportName]),
     category: str(r[idx.category]),
     sale_unit_price: num(r[idx.sale]) ?? 0,

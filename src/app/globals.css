@@ -332,7 +332,6 @@ button.btn-secondary {
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
 }
 .est-line-head {
   display: flex;
@@ -342,6 +341,11 @@ button.btn-secondary {
   padding: 12px 14px;
   background: linear-gradient(180deg, #f3faf9, #ffffff);
   border-bottom: 1px solid var(--border);
+  border-radius: 14px 14px 0 0;
+}
+.est-line-head.collapsed {
+  border-bottom: none;
+  border-radius: 14px;
 }
 .est-line-head .est-no {
   font-weight: 700;
@@ -372,16 +376,27 @@ button.btn-secondary {
 }
 
 .est-chems {
-  border: 1px dashed var(--border);
+  border: 1px solid #bfe0d9;
+  border-left: 4px solid var(--accent);
   border-radius: 12px;
   padding: 12px;
-  background: #fcfdfd;
+  background: #eaf6f3;
   display: grid;
   gap: 10px;
+}
+.est-chems-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 .est-chems-title {
   font-weight: 700;
   font-size: 0.9rem;
+}
+.est-chems-total {
+  margin-left: auto;
+  font-weight: 700;
 }
 .est-chem-row {
   display: grid;
@@ -465,6 +480,78 @@ button.btn-secondary {
 }
 .btn-secondary:hover {
   background: #f0faf8;
+}
+
+/* 検索つきセレクト（コンボボックス） */
+.ss {
+  position: relative;
+}
+.ss-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: auto;
+  padding: 0 6px;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.ss-list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.ss-opt {
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.ss-opt:hover,
+.ss-opt.sel {
+  background: #eef6f5;
+}
+.ss-empty {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+/* グリッド子の縮小許可（横はみ出し防止） */
+.est-grid > *,
+.est-chem-row > * {
+  min-width: 0;
+}
+
+/* モバイル：1カラムに畳んで右端の見切れを防ぐ */
+@media (max-width: 640px) {
+  main {
+    padding: 12px;
+  }
+  .panel {
+    padding: 16px;
+  }
+  .est-grid,
+  .est-chem-row {
+    grid-template-columns: 1fr;
+  }
+  .est-chem-row button {
+    justify-self: start;
+  }
 }
 
 /* 印刷(PDF)専用ブロックは画面では隠す（@media print で表示）。 */
