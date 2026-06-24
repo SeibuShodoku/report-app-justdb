@@ -17,7 +17,7 @@
  *     薬剤明細   = round(薬剤単価[売価] × 使用量)
  *     薬剤売価   = 薬剤明細 × 作業回数
  *     薬剤原価   = round(薬剤売価 ÷ 薬剤係数)              ※販売価格表は「売価」を持つ・原価は逆算
- *     施工人件費 = 人件費単価 × round(施工時間[h], 2) × 人数 × 回数
+ *     施工人件費 = 人件費単価 × round(施工時間[h], 2) × 人数 × 回数 × 割増料金係数
  *     移動コスト = 移動単価 × km × 回数
  *     施工コスト = 薬剤原価 + 施工人件費 + 移動コスト + 報告書作成費用
  *     諸経費     = ROUNDUP(施工コスト × 諸経費率, 百円)
@@ -87,6 +87,8 @@ export interface EstimateLineInput {
   laborHours?: number;
   /** 作業人数。既定 1。 */
   workers?: number;
+  /** 割増料金係数（明細＝施工人件費に効く。1=なし / 1.25=夜間・休日昼間 / 1.5=深夜）。既定 1。 */
+  laborSurcharge?: number;
 
   // --- 移動 ---
   /** 移動距離（km） */
@@ -194,7 +196,7 @@ export function calcLine(input: EstimateLineInput, settings: EstimateSettings): 
 
   // 労務・移動（両者とも回数分積算）
   const hours = roundTo(input.laborHours ?? 0, 2); // ＝施工時間変換
-  const laborCost = settings.laborUnitPrice * hours * workers * count;
+  const laborCost = settings.laborUnitPrice * hours * workers * count * (input.laborSurcharge ?? 1);
   const travelCost = settings.travelUnitPrice * (input.travelKm ?? 0) * count;
 
   // 薬剤（明細フィールド＝複数可）。各行 round(売価単価 × 使用量) を回数分、原価は行ごとの掛率で逆算して合算。

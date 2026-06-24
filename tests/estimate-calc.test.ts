@@ -148,6 +148,14 @@ describe("calcLine（一般施工金額計算）", () => {
     expect(r.constructionCost).toBe(188); // 労務0・移動0
     expect(r.standardPrice).toBe(376); // 188 ÷ 0.5
   });
+
+  it("割増料金係数は施工人件費に効く（深夜1.5なら労務×1.5）", () => {
+    const r = calcLine(
+      { mode: "general", costCoefficient: 0.3, laborHours: 1, workers: 1, count: 1, laborSurcharge: 1.5 },
+      settings
+    );
+    expect(r.laborCost).toBe(8700); // 5800 × 1h × 1人 × 1回 × 1.5
+  });
 });
 
 describe("calcLine（シロアリ坪単価計算）", () => {

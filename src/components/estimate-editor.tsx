@@ -5,9 +5,9 @@
  *
  * 構造：見積（表紙）→ 明細（施工内容・労務・移動・坪・回数）→ 明細内の薬剤明細（縦持ち・複数）。
  * 物理量を入れると純粋エンジン（estimate-calc.ts）で原価積算→標準価格→粗利をライブ計算する。
- * 薬剤は販売価格表（props・表示順は sort_order=JUST.DB順）から選び、売価単価・販売掛率・単位を取り込む。
- * 選択は検索つきセレクト（SearchSelect）。計算式設定は props（見積日に有効な版）。
- * 保存／版管理／A4 PDF は後続（③④）。認可はページが IAP 社内SSO 配下。仕様: docs/spec/ring2-estimate.md（着手時）
+ * 薬剤は販売価格表（props・表示順は sort_order=JUST.DB順）から検索つきセレクトで選び、単価/掛率/単位を取り込む。
+ * 計算式設定は props（見積日に有効な版）。保存／版管理／A4 PDF は後続（③④）。
+ * 認可はページが IAP 社内SSO 配下。仕様: docs/spec/ring2-estimate.md（着手時）
  */
 import { useMemo, useState } from "react";
 import {
@@ -29,12 +29,12 @@ type Props = {
 /** 明細内の薬剤1行（明細フィールド）。 */
 type ChemSub = {
   id: string;
-  category: string; // 中分類フィルタ
-  priceTableId: string; // 選択薬剤
-  unitPrice: string; // 売価単価（薬剤から）
-  markup: string; // 販売掛率（薬剤から）
-  unit: string; // 単位（薬剤から）
-  qty: string; // 使用量
+  category: string;
+  priceTableId: string;
+  unitPrice: string;
+  markup: string;
+  unit: string;
+  qty: string;
 };
 
 type EditorLine = {
@@ -47,18 +47,19 @@ type EditorLine = {
   laborH: string; // 施工時間（時）
   laborM: string; // 施工時間（分）
   workers: string; // 作業人数
+  laborSurcharge: string; // 割増料金係数（施工人件費に効く）
   travelKm: string; // 移動距離
   count: string; // 作業回数
   hazardFactor: string; // 床下・高所・特殊作業係数
-  reportFee: string; // 報告書作成費用
+  reportFee: string; // 報告書作成費用（固定選択）
   tsubo: string; // 坪数（シロアリ）
   tsuboUnitPrice: string; // 見積坪単価（シロアリ・売価）
   termiteChemId: string; // 選択中の防蟻剤（表示用）
   termiteChemTsuboPrice: string; // 防蟻剤坪単価（シロアリ・薬剤から）
   termiteChemMarkup: string; // 防蟻剤の販売掛率
   costCoefficient: string; // 原価係数（選択）
-  priceOverride: string; // 見積金額の手入力
-  discount: string; // 値引額
+  priceOverride: string; // 見積金額の手入力（数字のみ保持）
+  discount: string; // 値引額（数字のみ保持）
   collapsed: boolean; // 明細の畳み状態
 };
 
@@ -77,11 +78,34 @@ const WORK_TYPES = [
 ] as const;
 const WORK_TYPE_OPTIONS: SelectOption[] = WORK_TYPES.map((t) => ({ value: t, label: t }));
 
+/** 報告書作成費用（固定。金額＝作成時間の目安）。 */
+const REPORT_FEE_OPTIONS = [
+  { v: "0", label: "報告書なし・複写式" },
+  { v: "1000", label: "作成15分" },
+  { v: "2000", label: "作成30分" },
+  { v: "3000", label: "作成45分" },
+  { v: "4000", label: "作成60分" },
+  { v: "6000", label: "作成90分" },
+  { v: "8000", label: "作成120分" }
+];
+
+/** 割増料金係数（施工人件費に効く）。 */
+const SURCHARGE_OPTIONS = [
+  { v: "1", label: "割増なし" },
+  { v: "1.25", label: "夜間・休日昼間" },
+  { v: "1.5", label: "深夜" }
+];
+
 const HOUR_OPTS = Array.from({ length: 13 }, (_, i) => i); // 0〜12時間
 const MIN_OPTS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`;
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
+const stripDigits = (s: string) => s.replace(/[^\d]/g, "");
+const withCommas = (s: string) => {
+  const d = s.replace(/[^\d]/g, "");
+  return d === "" ? "" : Number(d).toLocaleString();
+};
 
 function newChem(): ChemSub {
   return { id: crypto.randomUUID(), category: "", priceTableId: "", unitPrice: "", markup: "", unit: "", qty: "" };
@@ -98,10 +122,11 @@ function newLine(defaults: { costCoefficient: number }): EditorLine {
     laborH: "0",
     laborM: "0",
     workers: "1",
+    laborSurcharge: "1",
     travelKm: "",
     count: "1",
     hazardFactor: "1",
-    reportFee: "",
+    reportFee: "0",
     tsubo: "",
     tsuboUnitPrice: "",
     termiteChemId: "",
@@ -143,6 +168,7 @@ function toInput(l: EditorLine): EstimateLineInput {
     })),
     laborHours: h != null || m != null ? (h ?? 0) + (m ?? 0) / 60 : undefined,
     workers: numOrUndef(l.workers),
+    laborSurcharge: numOrUndef(l.laborSurcharge),
     travelKm: numOrUndef(l.travelKm),
     hazardFactor: numOrUndef(l.hazardFactor),
     reportFee: numOrUndef(l.reportFee),
@@ -294,14 +320,10 @@ export function EstimateEditor({ settings, products, today }: Props) {
 
                 {!l.collapsed && (
                   <div className="est-line-body">
-                    <div className="est-grid">
+                    <div className="est-row-2">
                       <div className="est-field">
                         <span className="est-label">業務タイプ</span>
-                        <SearchSelect
-                          value={l.workType}
-                          options={WORK_TYPE_OPTIONS}
-                          onChange={(v) => updateLine(l.id, { workType: v })}
-                        />
+                        <SearchSelect value={l.workType} options={WORK_TYPE_OPTIONS} onChange={(v) => updateLine(l.id, { workType: v })} />
                       </div>
                       <label className="est-field">
                         <span className="est-label">計算方式</span>
@@ -310,11 +332,12 @@ export function EstimateEditor({ settings, products, today }: Props) {
                           <option value="termiteTsubo">シロアリ坪単価計算</option>
                         </select>
                       </label>
-                      <label className="est-field">
-                        <span className="est-label">施工内容</span>
-                        <input value={l.workContent} onChange={(e) => updateLine(l.id, { workContent: e.target.value })} />
-                      </label>
                     </div>
+
+                    <label className="est-field">
+                      <span className="est-label">施工内容</span>
+                      <input value={l.workContent} onChange={(e) => updateLine(l.id, { workContent: e.target.value })} />
+                    </label>
 
                     {/* 薬剤明細（縦持ち・複数・畳み可） */}
                     <div className="est-chems">
@@ -337,27 +360,10 @@ export function EstimateEditor({ settings, products, today }: Props) {
                               }));
                             return (
                               <div key={c.id} className="est-chem-row">
-                                <SearchSelect
-                                  value={c.category}
-                                  options={categoryOptions}
-                                  placeholder="中分類"
-                                  onChange={(v) => updateChem(l.id, c.id, { category: v, priceTableId: "" })}
-                                />
-                                <SearchSelect
-                                  value={c.priceTableId}
-                                  options={opts}
-                                  placeholder="薬剤を検索／選択"
-                                  onChange={(v) => selectChemProduct(l.id, c.id, v)}
-                                />
+                                <SearchSelect value={c.category} options={categoryOptions} placeholder="中分類" onChange={(v) => updateChem(l.id, c.id, { category: v, priceTableId: "" })} />
+                                <SearchSelect value={c.priceTableId} options={opts} placeholder="薬剤を検索／選択" onChange={(v) => selectChemProduct(l.id, c.id, v)} />
                                 <span className="est-qty">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step="any"
-                                    value={c.qty}
-                                    onChange={(e) => updateChem(l.id, c.id, { qty: e.target.value })}
-                                    placeholder="使用量"
-                                  />
+                                  <input type="number" min={0} step="any" value={c.qty} onChange={(e) => updateChem(l.id, c.id, { qty: e.target.value })} placeholder="使用量" />
                                   {c.unit ? <span className="est-unit">{c.unit}</span> : null}
                                 </span>
                                 <button type="button" className="btn-secondary" onClick={() => removeChem(l.id, c.id)}>
@@ -387,12 +393,7 @@ export function EstimateEditor({ settings, products, today }: Props) {
                         </label>
                         <div className="est-field">
                           <span className="est-label">防蟻剤（薬剤選択→坪単価に反映）</span>
-                          <SearchSelect
-                            value={l.termiteChemId}
-                            options={termiteOptions}
-                            placeholder="防蟻剤を検索／選択"
-                            onChange={(v) => selectTermiteChem(l.id, v)}
-                          />
+                          <SearchSelect value={l.termiteChemId} options={termiteOptions} placeholder="防蟻剤を検索／選択" onChange={(v) => selectTermiteChem(l.id, v)} />
                         </div>
                         <label className="est-field">
                           <span className="est-label">防蟻剤坪単価（売価/坪）</span>
@@ -401,7 +402,7 @@ export function EstimateEditor({ settings, products, today }: Props) {
                       </div>
                     ) : null}
 
-                    <div className="est-grid">
+                    <div className="est-row-2">
                       <div className="est-field">
                         <span className="est-label">施工時間</span>
                         <div className="est-time">
@@ -424,12 +425,15 @@ export function EstimateEditor({ settings, products, today }: Props) {
                         </div>
                       </div>
                       <label className="est-field">
-                        <span className="est-label">作業人数</span>
-                        <input type="number" min={0} step={1} value={l.workers} onChange={(e) => updateLine(l.id, { workers: e.target.value })} />
-                      </label>
-                      <label className="est-field">
                         <span className="est-label">移動距離（km）</span>
                         <input type="number" min={0} step="any" value={l.travelKm} onChange={(e) => updateLine(l.id, { travelKm: e.target.value })} />
+                      </label>
+                    </div>
+
+                    <div className="est-row-3">
+                      <label className="est-field">
+                        <span className="est-label">作業人数</span>
+                        <input type="number" min={0} step={1} value={l.workers} onChange={(e) => updateLine(l.id, { workers: e.target.value })} />
                       </label>
                       <label className="est-field">
                         <span className="est-label">作業回数</span>
@@ -442,9 +446,28 @@ export function EstimateEditor({ settings, products, today }: Props) {
                           <option value="0.1">0.1</option>
                         </select>
                       </label>
+                    </div>
+
+                    <div className="est-row-3">
                       <label className="est-field">
                         <span className="est-label">報告書作成費用</span>
-                        <input type="number" min={0} step="any" value={l.reportFee} onChange={(e) => updateLine(l.id, { reportFee: e.target.value })} />
+                        <select value={l.reportFee} onChange={(e) => updateLine(l.id, { reportFee: e.target.value })}>
+                          {REPORT_FEE_OPTIONS.map((o) => (
+                            <option key={o.v} value={o.v}>
+                              ¥{Number(o.v).toLocaleString()}　{o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="est-field">
+                        <span className="est-label">割増料金（施工人件費に）</span>
+                        <select value={l.laborSurcharge} onChange={(e) => updateLine(l.id, { laborSurcharge: e.target.value })}>
+                          {SURCHARGE_OPTIONS.map((o) => (
+                            <option key={o.v} value={o.v}>
+                              ×{o.v}　{o.label}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                       <label className="est-field">
                         <span className="est-label">原価係数</span>
@@ -456,13 +479,28 @@ export function EstimateEditor({ settings, products, today }: Props) {
                           ))}
                         </select>
                       </label>
+                    </div>
+
+                    <div className="est-row-2">
                       <label className="est-field">
                         <span className="est-label">見積金額（空欄＝標準価格 {yen(r.standardPrice)}）</span>
-                        <input type="number" min={0} step="any" value={l.priceOverride} onChange={(e) => updateLine(l.id, { priceOverride: e.target.value })} placeholder={String(r.standardPrice)} />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={withCommas(l.priceOverride)}
+                          onChange={(e) => updateLine(l.id, { priceOverride: stripDigits(e.target.value) })}
+                          placeholder={r.standardPrice.toLocaleString()}
+                        />
                       </label>
                       <label className="est-field">
                         <span className="est-label">値引額</span>
-                        <input type="number" min={0} step="any" value={l.discount} onChange={(e) => updateLine(l.id, { discount: e.target.value })} />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={withCommas(l.discount)}
+                          onChange={(e) => updateLine(l.id, { discount: stripDigits(e.target.value) })}
+                          placeholder="0"
+                        />
                       </label>
                     </div>
 

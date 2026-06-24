@@ -321,6 +321,20 @@ button.btn-secondary {
   display: grid;
   gap: 4px;
 }
+.est-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.est-row-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+.est-row-2 > *,
+.est-row-3 > * {
+  min-width: 0;
+}
 .est-field > .est-label {
   font-size: 0.78rem;
   color: var(--muted);
@@ -546,6 +560,8 @@ button.btn-secondary {
     padding: 16px;
   }
   .est-grid,
+  .est-row-2,
+  .est-row-3,
   .est-chem-row {
     grid-template-columns: 1fr;
   }
