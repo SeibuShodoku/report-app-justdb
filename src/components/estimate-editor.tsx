@@ -28,6 +28,7 @@ type Props = {
 type EditorLine = {
   id: string;
   mode: EstimateCalcMode;
+  workType: string; // 業務タイプ（畳んだ時の見出し）
   workContent: string; // 施工内容
   category: string; // 中分類（薬剤フィルタ）
   priceTableId: string; // 選択中の薬剤
@@ -47,6 +48,7 @@ type EditorLine = {
   costCoefficient: string; // 原価係数（選択）
   priceOverride: string; // 見積金額の手入力
   discount: string; // 値引額
+  collapsed: boolean; // UI: 畳み状態
 };
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`;
@@ -56,6 +58,7 @@ function newLine(defaults: { costCoefficient: number }): EditorLine {
   return {
     id: crypto.randomUUID(),
     mode: "general",
+    workType: "",
     workContent: "",
     category: "",
     priceTableId: "",
@@ -74,7 +77,8 @@ function newLine(defaults: { costCoefficient: number }): EditorLine {
     termiteChemTsuboPrice: "",
     costCoefficient: String(defaults.costCoefficient),
     priceOverride: "",
-    discount: ""
+    discount: "",
+    collapsed: false
   };
 }
 
@@ -181,6 +185,39 @@ export function EstimateEditor({ settings, products, today }: Props) {
         return (
           <fieldset key={l.id} className="section-block">
             <legend>明細 {i + 1}</legend>
+
+            <div className="inline-actions">
+              <button type="button" className="btn-secondary" onClick={() => updateLine(l.id, { collapsed: !l.collapsed })}>
+                {l.collapsed ? "▶ 開く" : "▼ 畳む"}
+              </button>
+              <span>
+                業務タイプ：<strong>{l.workType.trim() || l.category || l.workContent || "（未入力）"}</strong>
+              </span>
+              <span>
+                金額：<strong>{yen(r.amount)}</strong>
+              </span>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setLines((prev) => (prev.length > 1 ? prev.filter((x) => x.id !== l.id) : prev))}
+                disabled={lines.length <= 1}
+              >
+                削除
+              </button>
+            </div>
+
+            {!l.collapsed && (
+              <>
+                <div className="editor-field">
+                  <label>
+                    業務タイプ
+                    <input
+                      value={l.workType}
+                      onChange={(e) => updateLine(l.id, { workType: e.target.value })}
+                      placeholder="例：ゴキブリ駆除"
+                    />
+                  </label>
+                </div>
 
             <div className="editor-field">
               <label>
@@ -337,16 +374,8 @@ export function EstimateEditor({ settings, products, today }: Props) {
               </tbody>
             </table>
 
-            <div className="inline-actions">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => setLines((prev) => (prev.length > 1 ? prev.filter((x) => x.id !== l.id) : prev))}
-                disabled={lines.length <= 1}
-              >
-                この明細を削除
-              </button>
-            </div>
+              </>
+            )}
           </fieldset>
         );
       })}
