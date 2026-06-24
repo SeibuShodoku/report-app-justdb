@@ -9,3 +9,7 @@ yarn-error.log*
 pnpm-debug.log*
 tsconfig.tsbuildinfo
 data/reports
+
+# JUST.DB エクスポートCSV（顧客PII＝顧客名・住所・担当者、または内部の売価/原価を含む）。
+# ルート直下に置く作業用エクスポートは入れない。テスト fixture 等は tests/ 配下に置けば対象外。
+/*.csv
