@@ -466,6 +466,24 @@ button.btn-secondary {
 .est-result .v {
   font-weight: 700;
 }
+.hint-btn {
+  width: auto;
+  margin-left: 4px;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.hint-text {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
 
 .est-totals {
   display: grid;

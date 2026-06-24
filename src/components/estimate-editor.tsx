@@ -201,6 +201,25 @@ function laborHoursOf(l: EditorLine): number {
   return Math.round(h * 100) / 100;
 }
 
+/** ステータスの1セル。hint があれば ⓘ をタップで説明を開閉。 */
+function HintCell({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="cell">
+      <span className="k">
+        {label}
+        {hint ? (
+          <button type="button" className="hint-btn" aria-label="説明" onClick={() => setOpen((o) => !o)}>
+            ⓘ
+          </button>
+        ) : null}
+      </span>
+      <span className="v">{value}</span>
+      {hint && open ? <span className="hint-text">{hint}</span> : null}
+    </div>
+  );
+}
+
 function toInput(l: EditorLine): EstimateLineInput {
   const h = numOrUndef(l.laborH);
   const m = numOrUndef(l.laborM);
@@ -614,12 +633,24 @@ export function EstimateEditor({ settings, products, today }: Props) {
                         <div className="cell"><span className="k">施工人件費</span><span className="v">{yen(r.laborCost)}</span></div>
                         <div className="cell"><span className="k">割増分施工人件費</span><span className="v">{yen(r.laborSurchargeExtra)}</span></div>
                         <div className="cell"><span className="k">諸経費</span><span className="v">{yen(r.overhead)}</span></div>
-                        <div className="cell"><span className="k">労働安全衛生費</span><span className="v">{yen(r.safetyCost)}</span></div>
+                        <HintCell
+                          label="労働安全衛生費"
+                          value={yen(r.safetyCost)}
+                          hint="ROUNDUP(労安費率 × 床下係数 × 施工コスト, 百円)。床下・高所・特殊作業ありで係数1（フル16%）、基本は0.1（1.6%）。標準価格には入らず、経費控除後にだけ効く。"
+                        />
                         <div className="cell"><span className="k">報告書作成費用_積算</span><span className="v">{yen(r.reportFee)}</span></div>
                         <div className="cell"><span className="k">施工コスト</span><span className="v">{yen(r.constructionCost)}</span></div>
-                        <div className="cell"><span className="k">標準価格</span><span className="v">{yen(r.standardPrice)}</span></div>
-                        <div className="cell"><span className="k">標準価格(薬剤吸収)</span><span className="v">{yen(r.standardPriceChemAbsorbed)}</span></div>
-                        <div className="cell"><span className="k">経費控除後見積金額</span><span className="v">{yen(r.netAfterExpenses)}</span></div>
+                        <HintCell label="標準価格" value={yen(r.standardPrice)} hint="施工コスト ÷ 原価係数。見積金額の既定値。" />
+                        <HintCell
+                          label="標準価格(薬剤吸収)"
+                          value={yen(r.standardPriceChemAbsorbed)}
+                          hint="薬剤を売価（原価×掛率1.6）のまま計上し、原価係数の施工マージンは労務・移動・報告書にだけ掛けた価格。薬剤に施工マージンを乗せない版（薬剤ゼロなら標準価格と同値）。"
+                        />
+                        <HintCell
+                          label="経費控除後見積金額"
+                          value={yen(r.netAfterExpenses)}
+                          hint="見積金額から材料（薬剤売価）・移動・報告書・諸経費・労安・割増分を引いた残り＝工賃＋利益の取り分。施工人件費（原価）を上回れば工賃で黒字。診断用で最終価格には効かない。"
+                        />
                         <div className="cell"><span className="k">粗利額 / 粗利率</span><span className="v">{yen(r.grossProfit)} / {pct(r.grossMarginRate)}</span></div>
                         <div className="cell"><span className="k">施工時間変換</span><span className="v">{laborHoursOf(l).toFixed(2)}</span></div>
                         <div className="cell"><span className="k">人件費単価 / 移動単価</span><span className="v">¥{settings.laborUnitPrice.toLocaleString()} / ¥{settings.travelUnitPrice.toLocaleString()}</span></div>
