@@ -51,6 +51,20 @@ type EditorLine = {
   collapsed: boolean; // UI: 畳み状態
 };
 
+/** 業務タイプ（見積明細の分類。固定選択肢）。 */
+const WORK_TYPES = [
+  "PC管理契約",
+  "ネズミ駆除",
+  "ゴキブリ駆除",
+  "シロアリ新築",
+  "シロアリ既築",
+  "その他害虫駆除",
+  "小動物対策",
+  "鳥／コウモリ対策",
+  "衛生（消毒など）",
+  "その他"
+] as const;
+
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`;
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
@@ -211,11 +225,14 @@ export function EstimateEditor({ settings, products, today }: Props) {
                 <div className="editor-field">
                   <label>
                     業務タイプ
-                    <input
-                      value={l.workType}
-                      onChange={(e) => updateLine(l.id, { workType: e.target.value })}
-                      placeholder="例：ゴキブリ駆除"
-                    />
+                    <select value={l.workType} onChange={(e) => updateLine(l.id, { workType: e.target.value })}>
+                      <option value="">（選択）</option>
+                      {WORK_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </div>
 
