@@ -22,6 +22,18 @@
   - `domain:seibu-s.co.jp`（社内ブラウザ＝Google SSO で `/report/photo` 閲覧）
   - `serviceAccount:report-worker-iap@seibu-dispatch-poc-tky.iam.gserviceaccount.com`（**旧 Option B の名残・現在未使用**。ダイジェスト生成は Option A＝Drive 直書きで IAP を越えない＝D-DIGEST 項5）
 - IAP サービスエージェント `service-137338258930@gcp-sa-iap…` に `run.invoker` 付与済み。
+- **外部ゲストの追加/削除**（社内SSOを持たない特定スタッフを社内アプリに入れる）：
+  ```
+  # 追加
+  gcloud iap web add-iam-policy-binding --resource-type=cloud-run --service=report-app-justdb \
+    --region=asia-northeast1 --project=seibu-dispatch-poc-tky \
+    --member=user:<email> --role=roles/iap.httpsResourceAccessor
+  # 削除（revoke）は add → remove に変えるだけ
+  gcloud iap web remove-iam-policy-binding ... --member=user:<email> --role=roles/iap.httpsResourceAccessor
+  ```
+  - 前提：`<email>` は Google アカウント（Workspace/Gmail）であること。組織のドメイン制限共有（DRS）が効いていると外部 `user:` は弾かれる→組織管理者が許可リスト追加要（2026-06 時点では DRS 非適用で追加可だった）。
+  - 注意：入れると**社内編集面フル（編集/保存可・削除は作成者本人のみ）＋顧客PIIに到達**。閲覧専用にはならない（見せるだけはリング1cの別サーフェス側）。ログイン後に特定の報告書へ着くには **launch token URL** を別途渡す（IAP通過だけではトップ止まり）。
+  - 現在の付与者一覧＝`gcloud iap web get-iam-policy --resource-type=cloud-run --service=report-app-justdb --region=asia-northeast1 --project=seibu-dispatch-poc-tky`。
 
 ## 秘密の置き場
 - **Cloud Run env**（report-app サーバー）：`GOOGLE_CLIENT_ID/SECRET`・`GOOGLE_DRIVE_REFRESH_TOKEN`・`SUPABASE_*`・`REPORT_LINK_SECRET`・`DRIVE_PROXY_SERVER_SECRET`（`--env-vars-file` で投入・ソースに焼かない）
