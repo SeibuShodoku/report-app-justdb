@@ -168,6 +168,58 @@ button:disabled {
   border: 1px solid var(--border);
 }
 
+/* 編集画面の構成ガイド・セクション（画面のみ＝PDFには出ない / no-print 併用） */
+.editor-guide {
+  margin: 8px 0 4px;
+  padding: 8px 12px;
+  background: #eef6ff;
+  border: 1px solid #c7e0ff;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #1f3a5f;
+}
+.editor-section {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fafafa;
+}
+.editor-section-title {
+  margin: 16px 0 8px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent, #1f6feb);
+}
+.cover-pick {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.cover-thumb {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 2px solid var(--accent, #1f6feb);
+  flex: 0 0 auto;
+}
+.cover-badge {
+  display: inline-block;
+  justify-self: start;
+  background: var(--accent, #1f6feb);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.editor-hint {
+  font-size: 12.5px;
+  color: #555;
+  line-height: 1.5;
+}
+
 .imported-photo-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

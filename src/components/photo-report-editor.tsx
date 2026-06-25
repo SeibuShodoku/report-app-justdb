@@ -369,6 +369,11 @@ export function PhotoReportEditor({
         <PrintButton />
       </div>
 
+      <p className="editor-guide no-print">
+        この画面の内容は <b>① 表紙</b> →（<b>② 写真</b>ページ）→ <b>③ まとめ</b> の順で A4 PDF になります。
+        仕上げたら「保存（新しい版）」→「サーバーPDF（保存版）」で出力します。
+      </p>
+
       {settingsOpen ? (
         <div className="modal-backdrop no-print" onClick={() => setSettingsOpen(false)}>
           <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
@@ -592,27 +597,26 @@ export function PhotoReportEditor({
         </div>
       ) : null}
 
-      <div className="editor-field no-print">
-        <label htmlFor="headerSummary">{kindLabel}概要（まとめ文章）</label>
-        <textarea
-          id="headerSummary"
-          value={headerSummary}
-          maxLength={2000}
-          placeholder="現場全体のまとめ（任意）"
-          onChange={(e) => setHeaderSummary(e.target.value)}
-        />
+      {/* ① 表紙（PDF 1ページ目）＝下の各写真の「☆ 表紙にする」で選んだ写真が表紙になる */}
+      <div className="editor-section no-print">
+        <h2 className="editor-section-title">① 表紙（PDF 1ページ目）</h2>
+        {coverItem ? (
+          <div className="cover-pick">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="cover-thumb" src={photoUrl(coverItem.fileId, folderId, token)} alt="表紙写真" />
+            <p className="editor-hint">
+              現在の表紙：{items.findIndex((it) => it.fileId === coverItem.fileId) + 1}枚目
+              {coverItem.heading ? `「${coverItem.heading}」` : ""}。
+              変更は下の各写真の「☆ 表紙にする」から。実施日・現場・担当は「⚙️ 設定」で入力します。
+            </p>
+          </div>
+        ) : (
+          <p className="editor-hint">写真がありません。</p>
+        )}
       </div>
 
-      <div className="editor-field no-print">
-        <label htmlFor="workItems">{kindLabel}内容（1行に1項目）</label>
-        <textarea
-          id="workItems"
-          value={workItemsText}
-          maxLength={3000}
-          placeholder={"例:\n101号室、102号室及び103号室の床下に木部剤及び土壌剤を散布処理\n101号室、102号室及び103号室の風呂場の壁面を穿孔し薬剤を注入処理"}
-          onChange={(e) => setWorkItemsText(e.target.value)}
-        />
-      </div>
+      {/* ② 写真（PDF本文・1ページ8枚）＝各写真に見出し・所見・赤丸 */}
+      <h2 className="editor-section-title no-print">② 写真（PDF本文・各写真に見出し／所見／赤丸）</h2>
 
       {items.length === 0 ? (
         <p className="notice">このフォルダに写真がありません。</p>
@@ -628,6 +632,7 @@ export function PhotoReportEditor({
                     <div className="print-only print-caption">
                       {index + 1}．{item.heading || `写真 ${index + 1}`}
                     </div>
+                    {isCover ? <div className="cover-badge no-print">★ 表紙</div> : null}
                     <PhotoAnnotator
                       src={photoUrl(item.fileId, folderId, token)}
                       alt={item.heading || item.name}
@@ -684,6 +689,31 @@ export function PhotoReportEditor({
           ))}
         </div>
       )}
+
+      {/* ③ まとめ（PDFの最終ページ＝概要・内容・免責）。画面でここを編集すると下のPDF体裁に出る */}
+      <div className="editor-section no-print">
+        <h2 className="editor-section-title">③ まとめ（PDFの最終ページ）</h2>
+        <div className="editor-field">
+          <label htmlFor="headerSummary">{kindLabel}概要（まとめ文章）</label>
+          <textarea
+            id="headerSummary"
+            value={headerSummary}
+            maxLength={2000}
+            placeholder="現場全体のまとめ（任意）"
+            onChange={(e) => setHeaderSummary(e.target.value)}
+          />
+        </div>
+        <div className="editor-field">
+          <label htmlFor="workItems">{kindLabel}内容（1行に1項目）</label>
+          <textarea
+            id="workItems"
+            value={workItemsText}
+            maxLength={3000}
+            placeholder={"例:\n101号室、102号室及び103号室の床下に木部剤及び土壌剤を散布処理\n101号室、102号室及び103号室の風呂場の壁面を穿孔し薬剤を注入処理"}
+            onChange={(e) => setWorkItemsText(e.target.value)}
+          />
+        </div>
+      </div>
 
       {/* ===== 印刷(PDF) 最終ページ：概要／内容／免責 ===== */}
       <div className="print-only print-summary">
