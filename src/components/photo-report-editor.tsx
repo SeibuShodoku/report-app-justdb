@@ -47,6 +47,12 @@ type Props = {
   currentUserEmail?: string;
 };
 
+/** ISO日付(YYYY-MM-DD)を「YYYY年M月D日」に整形。ISOでなければそのまま返す（旧・手入力の互換）。 */
+function formatJpDate(s: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  return m ? `${Number(m[1])}年${Number(m[2])}月${Number(m[3])}日` : s;
+}
+
 /** ブラウザが画像プロキシ経由で写真を取得する URL（pure・サーバーモジュール非依存）。 */
 function photoUrl(fileId: string, folderId: string, token: string): string {
   const p = new URLSearchParams({ fileId, folderId, token });
@@ -429,7 +435,7 @@ export function PhotoReportEditor({
 
       <p className="editor-guide no-print">
         この画面の内容は <b>① 表紙</b> →（<b>② 写真</b>ページ）→ <b>③ まとめ</b> の順で A4 PDF になります。
-        仕上げたら「保存（新しい版）」→「サーバーPDF（保存版）」で出力します。
+        仕上げたら「報告書保存」→「PDF出力」で A4 PDF を出します（その場で見るだけなら「プレビュー」）。
       </p>
 
       {settingsOpen ? (
@@ -454,13 +460,11 @@ export function PhotoReportEditor({
             </div>
 
             <div className="editor-field">
-              <label htmlFor="set-date">実施日（手入力）</label>
+              <label htmlFor="set-date">実施日</label>
               <input
                 id="set-date"
-                type="text"
+                type="date"
                 value={settings.execDate ?? ""}
-                maxLength={40}
-                placeholder="例: 2026年6月19日"
                 onChange={(e) => setField("execDate", e.target.value)}
               />
             </div>
@@ -573,7 +577,7 @@ export function PhotoReportEditor({
           <tbody>
             <tr>
               <th>{kindLabel}実施日</th>
-              <td>{execDate || "　"}</td>
+              <td>{execDate ? formatJpDate(execDate) : "　"}</td>
             </tr>
             <tr>
               <th>{kindLabel}現場</th>
@@ -773,14 +777,7 @@ export function PhotoReportEditor({
                         placeholder={`写真 ${index + 1}`}
                         onChange={(e) => patchItem(index, { heading: e.target.value })}
                       />
-                      <label htmlFor={`n-${item.fileId}`}>所見</label>
-                      <textarea
-                        id={`n-${item.fileId}`}
-                        value={item.annotationNote}
-                        maxLength={500}
-                        placeholder="所見（任意）"
-                        onChange={(e) => patchItem(index, { annotationNote: e.target.value })}
-                      />
+                      {/* 所見は grid-8 PDF に出ないため一旦非表示（detail-3 等のカット追加時に再表示）。データ(annotationNote)は保持。 */}
                       {item.annotations.length > 0 ? (
                         <p className="notice no-print">注記 {item.annotations.length} 件（保存に含まれます）</p>
                       ) : null}
@@ -822,7 +819,7 @@ export function PhotoReportEditor({
       <div className="print-only print-summary">
         <div className="summary-head">
           <span className="summary-property">{propertyLabel}</span>
-          <span className="summary-date">実施日　{execDate}</span>
+          <span className="summary-date">実施日　{formatJpDate(execDate)}</span>
         </div>
         <section className="summary-box">
           <h3>{kindLabel}概要</h3>
