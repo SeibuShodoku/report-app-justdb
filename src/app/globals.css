@@ -798,8 +798,8 @@ button.btn-secondary {
     height: 270mm; /* A4(297mm) − 上下マージン(各12mm) の安全値 */
   }
   .tmpl-grid-8 .annot-img {
-    max-width: 88mm;  /* 列幅(約90mm)内 */
-    max-height: 56mm; /* 行高(約63mm)−キャプション 内 */
+    max-width: 86mm;  /* 列幅(約90mm)内 */
+    max-height: 50mm; /* 画像行(約54mm = セル63mm − キャプション9mm)内・上下に余白を残す */
   }
 
   /* 表紙（先頭ページ。次の写真ページが break-before で改ページするので break-after は付けない＝二重改ページ防止） */
@@ -850,14 +850,16 @@ button.btn-secondary {
   .print-caption {
     display: block;
     font-weight: 700;
-    font-size: 10pt;
-    margin-bottom: 3px;
+    font-size: 9pt;
+    line-height: 1.2;
+    margin: 0 0 1mm;
+    overflow: hidden; /* 見出しが長くてもキャプション枠(9mm)内に収め、写真へ食い込ませない */
   }
   .photo-card {
     border: none;
     padding: 0;
     display: grid;
-    grid-template-rows: auto 1fr; /* キャプション＋写真領域 */
+    grid-template-rows: 9mm 1fr; /* キャプション枠を固定し、写真と重ならないようにする */
     min-height: 0;
     overflow: hidden;
   }
