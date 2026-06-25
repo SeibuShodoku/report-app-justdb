@@ -2,7 +2,7 @@
 
 最終更新：2026-06-18 ／ **archived: 2026-06-19**
 状態：**archived（初期仕様・superseded）**
-> ⚠️ これは初期の設計意図の記録（アーカイブ）。**現況の正本アーキは `../architecture/slack-photo-report-architecture.md`**（Cloud Run/IAP・ワーカーはDrive直読み・案件ダイジェスト統合）、実装計画は `../spec/slack-photo-report-impl-plan.md`。
+> ⚠️ これは初期の設計意図の記録（アーカイブ）。**現況の正本アーキは `../architecture/slack-photo-report-architecture.md`**（Cloud Run/IAP・ワーカーはDrive直読み・案件ダイジェスト統合）、実装計画は `../spec/photo-report/slack-photo-report-impl-plan.md`。
 
 Slack に写真を集め、AI がスレッド文脈＋写真から**写真報告書の下書き（report JSON）**を作り、
 本アプリ（`report-app-justdb`）の WEB 報告書として**プリフィル済み**で開けるようにする自動化レイヤの仕様。
@@ -134,4 +134,4 @@ Drive ──(プロキシが Drive API)──▶ report-app-justdb(サーバー)
 - 本アプリ：`spec/requirements.md` ／ `spec/report-formats.md`（§3 写真報告書） ／ `architecture/overview.md`
 - 横断：[`decisions.md` D-AIDATA](../../../decisions.md)（顧客写真を AI へ）, [D-PORTS](../../../decisions.md), [`PORTS.md`](../../../PORTS.md)
 - 基盤：`GCP_VM_Claude_構築手順.md`（VM 常駐 Claude） ／ `slack-mini-bolt`（Slack/Drive 資産） ／ `seibot-proxy`（署名ゲートウェイ）
-- 実装計画：`spec/slack-photo-report-impl-plan.md`
+- 実装計画：`spec/photo-report/slack-photo-report-impl-plan.md`

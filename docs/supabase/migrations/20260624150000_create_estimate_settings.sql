@@ -1,7 +1,7 @@
 -- 見積（リング2）の計算式設定＝版付き。値上げ改定の前後で版を切り替える「識別キー的な管理」をサイト内に持つ。
 -- 計算エンジン（src/lib/estimate-calc.ts）は定数（人件費単価・移動単価・各率・薬剤係数・消費税率）を
 -- ハードコードせず、本表の版を引数で受け取る。見積日に有効な版（is_active かつ effective_from <= 見積日 の最新）を採用。
--- 削除は is_active=false の論理削除（物理削除しない運用）。仕様: docs/spec/ring2-estimate.md（着手時）/ vision/case-portal.md §9
+-- 削除は is_active=false の論理削除（物理削除しない運用）。仕様: docs/spec/estimate/ring2-estimate.md/ vision/case-portal.md §9
 create table if not exists estimate_settings (
   id                        bigint generated always as identity primary key,
   label                     text not null unique,            -- 識別キー（人間可読 例 "2026年度06月"）

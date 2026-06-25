@@ -2,7 +2,7 @@
 
 最終更新：2026-06-20
 状態：**Phase 1/2/3 prod稼働。Phase4 版管理・注記＝ブラウザE2E済。Phase5 堅牢化＝完了。Phase6 設定モーダル＋PDF体裁＝実装済（migration 適用済 2026-06-20）。Phase D1 案件ダイジェスト生成＝実装/E2E済 2026-06-20（Option A・worker 直書き）。Phase D2 digest-gas 切替＝2026-06-20 本番切替完了（統一正本モデル・旧 API 直叩き撤去＝API課金停止）。残＝JUST.DB本接続(予算)**
-対象仕様（正本）：`../architecture/slack-photo-report-architecture.md`（本書はその実装手順）
+対象仕様（正本）：`../../architecture/slack-photo-report-architecture.md`（本書はその実装手順）
 
 ## 0. 方針
 
@@ -158,7 +158,7 @@
 - [ ] 完成 UX（進捗表示・最新版へのリンク）。
 - [ ] ワーカーの自動再起動（現状 tmux 手動・systemd/respawn 化）。
 - [ ] （任意）JUST.DB 限定書き戻し（金額/回数/薬剤/要約）。`open-issues.md` §0 の 5000/日 予算が解けてから。
-- [ ] **契約抽出**：稼働中の画像プロキシ＋report JSON 取り込み＋`_ai/` 書込みから `*_CONTRACT.md` を本アプリ `docs/` に抽出し、[`PORTS.md`](../../../PORTS.md) §5 に登録（D-PORTS）。
+- [ ] **契約抽出**：稼働中の画像プロキシ＋report JSON 取り込み＋`_ai/` 書込みから `*_CONTRACT.md` を本アプリ `docs/` に抽出し、[`PORTS.md`](../../../../PORTS.md) §5 に登録（D-PORTS）。
 
 ---
 
@@ -181,7 +181,7 @@
 - **JUST.DB 予算**：本フローで JUST.DB を不用意に叩かない（Drive+Supabase+AI で完結させる）。
 
 ## 関連
-- 仕様（正本）：`../architecture/slack-photo-report-architecture.md`（簡易版＝`slack-photo-report-simple.md`）
+- 仕様（正本）：`../../architecture/slack-photo-report-architecture.md`（簡易版＝`slack-photo-report-simple.md`）
 - 既存：`spec/requirements.md` / `spec/report-formats.md` / `architecture/overview.md` / `architecture/justdb-supabase-integration.md`
-- 横断：[`decisions.md` D-AIDATA / D-PORTS](../../../decisions.md) / [`PORTS.md`](../../../PORTS.md)
+- 横断：[`decisions.md` D-AIDATA / D-PORTS](../../../../decisions.md) / [`PORTS.md`](../../../../PORTS.md)
 - 基盤：`GCP_VM_Claude_構築手順.md` / `slack-mini-bolt` / `seibot-proxy`

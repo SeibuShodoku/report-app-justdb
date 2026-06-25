@@ -62,6 +62,7 @@
 - `app/mock` が現行の作業中心。旧 `report/new` 系（※）は汎用雛形で、本丸ではない。
 - `lib/supabase-rest.ts` の Supabase アクセスは**サーバー（APIルート）専用**。service_role キーをクライアントに渡さない。
 - 旧 `data/reports`（ローカルFS）は本番非永続。永続は Drive（＋Supabase）へ置換予定。
+- `docs/spec/` は **報告種別ごとのサブフォルダ**で分ける：`photo-report/`（写真報告書）・`prevention-report/`（防除作業報告書・リング1a）・`estimate/`（見積書・リング2）＋横断（`requirements.md`/`report-formats.md`/`open-issues.md`）。**現況アーキ `docs/architecture/` と契約 `docs/contracts/` は種別横断＝レイヤ別**のまま（計画 spec は種別別、アーキ／契約はレイヤ別という分け方）。コード（`src/`）は従来どおり**レイヤ別**（`components/`・`lib/`・`schemas/`）で種別フォルダにはしない（`search-select.tsx` のような汎用部品が跨ぐため）。
 
 ## 今後の追加（予定）
 

@@ -9,20 +9,25 @@
 - **案件ダイジェスト生成 Phase D1（2026-06-20・E2E済）**：`case_digest_jobs`→VM ワーカーが未読書類＋Slack増分をマージ要約→**`_ai/digest.md` を Drive 直書き（Option A）**＋トピック要約。写真AIへ文脈(digest)を初供給。
 - **案件ダイジェスト Phase D2（2026-06-20・本番切替完了）**：`topic-digest-gas` を enqueue＋apply の I/O 専従へ切替、要約は VM・正本＝AI製 `digest.md`・備考＝固定的重要情報カード。**旧 `summarizer.gs` 撤去＝API 課金停止**。正本＝`architecture/slack-photo-report-architecture.md §7`・中央契約 `contracts/case-digest/`。
 - 紺谷V／写真報告書／融合のモック（`/mock`）：Supabase 接続・カスケード・ケース取得をライブ確認済（プレゼン可）。
-- **見積書（リング2・試作 prod 稼働）**：`/estimate` で原価積算をライブ計算（明細→薬剤明細・シロアリ施工プラン・粗利率/計算ステータス）。計算式設定の版管理 `/admin/estimate-settings`、販売価格表ミラー `chemical_products`。正本＝`spec/ring2-estimate.md`。**レビュー段階**。
+- **見積書（リング2・試作 prod 稼働）**：`/estimate` で原価積算をライブ計算（明細→薬剤明細・シロアリ施工プラン・粗利率/計算ステータス）。計算式設定の版管理 `/admin/estimate-settings`、販売価格表ミラー `chemical_products`。正本＝`spec/estimate/ring2-estimate.md`。**レビュー段階・仮完成**（残課題＝`spec/estimate/open-issues.md`）。
 
 ## 0. 構想（北極星）
 
 - `vision/case-portal.md`: **案件ポータル構想**（報告書統合→社内/顧客2画面→双方向。D-PORTAL）。本書の仕様・設計が向かう先。
 
-## 1. 仕様（spec）
+spec は **横断（全種別共通）** と **報告種別ごと（`spec/<種別>/`）** に分かれる。現況アーキは `architecture/`、計画は本 `spec/`（README §0 の文書3分類）。
 
+**横断（v1.0・全種別共通）**
 - `spec/requirements.md`: 目的・スコープ・現行の決定事項（**v1.0・防除WEB部分**）
 - `spec/report-formats.md`: 紺谷V／写真報告書／融合の構成、PDF・写真・注記・設定JSON
-- `spec/open-issues.md`: 未確定事項
-- `spec/ring2-estimate.md`: **見積書（リング2）仕様・現況**（原価積算の計算式・シロアリ施工プラン・データ層・エディタ`/estimate`・デプロイ。計算式の正本は別リポ `justdb-dataflows.md`）
-- `spec/slack-photo-report-impl-plan.md`: 写真報告書システムの**実装計画**（M1/M2達成・案件ダイジェスト統合）。**現況の正本アーキは `architecture/slack-photo-report-architecture.md`**
+- `spec/open-issues.md`: 未確定事項（横断）
+
+**報告種別ごと（`spec/<種別>/`）**
+- `spec/photo-report/slack-photo-report-impl-plan.md`: **写真報告書**システムの**実装計画**（M1/M2達成・案件ダイジェスト統合）。**現況の正本アーキは `architecture/slack-photo-report-architecture.md`**
   - 初期仕様 `slack-photo-report.md` は `archive/` へ移動（superseded）
+- `spec/prevention-report/ring1a-prevention-report.md`: **防除作業報告書（紺谷V・リング1a）**仕様（実装・本番デプロイ済）
+- `spec/estimate/ring2-estimate.md`: **見積書（リング2）**仕様・現況（原価積算の計算式・シロアリ施工プラン・データ層・エディタ`/estimate`・デプロイ。計算式の正本は別リポ `justdb-dataflows.md`）
+- `spec/estimate/open-issues.md`: 見積書の**課題・未配線一覧**（保存／起動／マニフェスト／A4 PDF／JUST.DB連携）
 
 ## 2. 設計（architecture）
 

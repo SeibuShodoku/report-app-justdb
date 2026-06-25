@@ -1,7 +1,7 @@
 -- 確定成果物マニフェスト（案件単位の時系列索引）。社内/顧客 共通レンダラの単一ソース。
 -- 中身正本は Drive（_ai/reports/<folder_id>/v{version}.json ＋ 写真凍結 _ai/assets/<deliverable_id>/）。
 -- 本表は「確定版を指す索引」（Drive から再生成可）。確定＝顧客可視の起点。
--- 仕様: docs/vision/case-portal.md §4.5 / docs/spec/ring1a-prevention-report.md D6
+-- 仕様: docs/vision/case-portal.md §4.5 / docs/spec/prevention-report/ring1a-prevention-report.md D6
 create table if not exists case_deliverables (
   deliverable_id    text primary key,               -- 確定単位の安定ID（例 "<folder_id>:v<version>"）
   case_id           text not null,

@@ -2,7 +2,7 @@
 
 最終更新：2026-06-19
 本書は「Slack写真→AI写真報告書」システムの**現時点の正本（アーキ＋仕様）**。実装手順は
-`spec/slack-photo-report-impl-plan.md`、資源の所在は `deployment.md`、報告書フォーマットは
+`spec/photo-report/slack-photo-report-impl-plan.md`、資源の所在は `deployment.md`、報告書フォーマットは
 `spec/report-formats.md`。横断方針は root `decisions.md`（D-AIDATA / D-DIGEST / D-PORTS）。
 初期仕様は `archive/slack-photo-report-spec-v0.1.md`（本書が上書き済）。
 

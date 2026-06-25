@@ -10,7 +10,7 @@
 | `vercel-drive-v0.1.md` | 旧 Vercel+Drive運用方針 | **後継**: `architecture/overview.md` |
 | `deploy-vercel.md` | 旧デプロイ手順（Vercel・非商用不可で却下） | **後継**: `runbook/deploy.md`（Cloud Run＋IAP） |
 | `report-pdf-generic-v0.3.md` | 旧 報告書・PDF仕様（汎用・8枚レイアウト前提） | **後継**: `spec/report-formats.md`（実物=防除作業報告書） |
-| `slack-photo-report-spec-v0.1.md` | Slack写真報告書の初期仕様（draft） | **後継**: `architecture/slack-photo-report-architecture.md`＋`spec/slack-photo-report-impl-plan.md`（Cloud Run/IAP・Drive直読み・案件ダイジェスト統合に更新） |
+| `slack-photo-report-spec-v0.1.md` | Slack写真報告書の初期仕様（draft） | **後継**: `architecture/slack-photo-report-architecture.md`＋`spec/photo-report/slack-photo-report-impl-plan.md`（Cloud Run/IAP・Drive直読み・案件ダイジェスト統合に更新） |
 
 注: 初期プロトタイプ `/report/new` は汎用報告書（日報/障害報告/改善提案）の雛形で、
 本丸（防除作業報告書）ではない。現行の作業対象は `/mock`。

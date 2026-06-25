@@ -1,5 +1,5 @@
 -- Slack写真報告書 用テーブル
--- 仕様(正本): docs/architecture/slack-photo-report-architecture.md / 実装計画 docs/spec/slack-photo-report-impl-plan.md
+-- 仕様(正本): docs/architecture/slack-photo-report-architecture.md / 実装計画 docs/spec/photo-report/slack-photo-report-impl-plan.md
 -- report-app(サーバー) と VM 常駐ワーカーが PostgREST 経由で参照する。既存スキーマとは独立。
 -- 適用: Supabase の SQL エディタ等で実行。アクセスは service_role（サーバー専用）想定＝RLSは有効化し公開アクセスは塞ぐ。
 

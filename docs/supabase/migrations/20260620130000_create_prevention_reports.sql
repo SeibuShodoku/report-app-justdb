@@ -1,6 +1,6 @@
 -- 防除作業報告書（紺谷V）の現在版（folder_id 単位）。写真報告書 photo_reports と同型・別テーブル。
 -- 版履歴は Drive _ai/reports/<folder_id>/v*.json（append-only）。本表は現在版の射影。
--- 仕様: docs/spec/ring1a-prevention-report.md
+-- 仕様: docs/spec/prevention-report/ring1a-prevention-report.md
 create table if not exists prevention_reports (
   folder_id        text primary key,                -- Drive フォルダ＝報告書の単位（写真と同機構）
   case_id          text,
