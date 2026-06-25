@@ -326,6 +326,53 @@ button.btn-secondary {
   border: 1px solid var(--border);
 }
 
+/* 編集アクションバーのボタン階層（緑=主操作 / 青=出力 / 薄枠=管理・設定 / グレー=AI） */
+.editor-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.editor-topbar h1 {
+  margin: 0 auto 0 0; /* タイトルの右に 管理/設定 を寄せる */
+  font-size: 1.15rem;
+}
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.editor-actions button {
+  width: auto;
+}
+.btn-util {
+  /* 管理・設定＝控えめ（透過＋薄い枠・小さめ） */
+  width: auto;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  font-size: 0.9rem;
+}
+.btn-primary {
+  /* 報告書保存＝主役（既定の緑をやや大きく） */
+  font-size: 1.02rem;
+  padding: 12px 20px;
+}
+.btn-output {
+  /* PDF出力＝青（出力系） */
+  background: #1d4ed8;
+}
+.btn-output-soft {
+  /* プレビュー＝青アウトライン（出力の弱い方） */
+  background: #fff;
+  color: #1d4ed8;
+  border: 1px solid #1d4ed8;
+}
+
 /* 設定モーダル */
 .modal-backdrop {
   position: fixed;

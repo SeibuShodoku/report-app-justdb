@@ -10,7 +10,6 @@
  */
 import { useCallback, useState } from "react";
 import { PhotoAnnotator } from "@/components/photo-annotator";
-import { PrintButton } from "@/components/print-button";
 import { BRANCH, DISCLAIMER } from "@/lib/report-template";
 import type { PhotoReportView } from "@/lib/photo-report-source";
 import type { Annotation } from "@/schemas/photo-report";
@@ -79,7 +78,6 @@ export function PhotoReportEditor({
   );
   const [headerSummary, setHeaderSummary] = useState(initialView.headerSummary ?? "");
   const [workItemsText, setWorkItemsText] = useState((initialView.workItems ?? []).join("\n"));
-  const [saveLabel, setSaveLabel] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [versions, setVersions] = useState<VersionEntry[] | null>(null);
@@ -210,23 +208,22 @@ export function PhotoReportEditor({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ report: buildReport(), label: saveLabel.trim() || undefined })
+          body: JSON.stringify({ report: buildReport() })
         }
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? `保存に失敗（${res.status}）`);
       setMessage({
         type: "success",
-        text: `保存しました（v${json.version}${saveLabel.trim() ? `「${saveLabel.trim()}」` : ""}）。`
+        text: `保存しました（v${json.version}）。版名は「管理」から付けられます。`
       });
-      setSaveLabel("");
       if (versionsOpen) void refreshVersions();
     } catch (e) {
       setMessage({ type: "error", text: e instanceof Error ? e.message : "保存に失敗しました。" });
     } finally {
       setSaving(false);
     }
-  }, [folderId, token, buildReport, saveLabel, versionsOpen, refreshVersions]);
+  }, [folderId, token, buildReport, versionsOpen, refreshVersions]);
 
   const renameVersion = useCallback(
     async (version: number, current: string) => {
@@ -332,30 +329,26 @@ export function PhotoReportEditor({
 
   return (
     <section className="panel">
-      <div className="inline-actions no-print">
+      <div className="editor-topbar no-print">
         <h1>写真報告書</h1>
-        <input
-          type="text"
-          className="version-label-input"
-          value={saveLabel}
-          maxLength={200}
-          placeholder="版名（任意）"
-          onChange={(e) => setSaveLabel(e.target.value)}
-        />
-        <button type="button" onClick={save} disabled={saving || items.length === 0}>
-          {saving ? "保存中…" : "保存（新しい版）"}
+        <button type="button" className="btn-util" onClick={toggleVersions}>
+          {versionsOpen ? "管理を閉じる" : "管理"}
         </button>
-        <button type="button" onClick={() => setSettingsOpen(true)}>
+        <button type="button" className="btn-util" onClick={() => setSettingsOpen(true)}>
           ⚙️ 設定
         </button>
-        <button type="button" onClick={generate} disabled={generating}>
-          {generating ? "依頼中…" : "AIで再作成"}
+      </div>
+
+      <div className="editor-actions no-print">
+        <button type="button" className="btn-primary" onClick={save} disabled={saving || items.length === 0}>
+          {saving ? "保存中…" : "報告書保存"}
         </button>
-        <button type="button" onClick={toggleVersions}>
-          {versionsOpen ? "版を閉じる" : "版を表示"}
+        <button type="button" className="btn-secondary" onClick={generate} disabled={generating}>
+          {generating ? "依頼中…" : "AIで再作成"}
         </button>
         <button
           type="button"
+          className="btn-output"
           onClick={() =>
             window.open(
               `/api/photo-report/pdf?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
@@ -364,9 +357,11 @@ export function PhotoReportEditor({
           }
           title="サーバー側で決定的なA4 PDFを生成（保存済みの現在版が対象）。先に保存してください。"
         >
-          サーバーPDF（保存版）
+          PDF出力
         </button>
-        <PrintButton />
+        <button type="button" className="btn-output-soft" onClick={() => window.print()}>
+          プレビュー
+        </button>
       </div>
 
       <p className="editor-guide no-print">
