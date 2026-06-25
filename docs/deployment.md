@@ -31,7 +31,7 @@
   # 削除（revoke）は add → remove に変えるだけ
   gcloud iap web remove-iam-policy-binding ... --member=user:<email> --role=roles/iap.httpsResourceAccessor
   ```
-  - 前提：`<email>` は Google アカウント（Workspace/Gmail）であること。組織のドメイン制限共有（DRS）が効いていると外部 `user:` は弾かれる→組織管理者が許可リスト追加要（2026-06 時点では DRS 非適用で追加可だった）。
+  - **重要（2026-06-25 判明）：このプロジェクトの IAP OAuth 同意画面は `orgInternalOnly: true`＝内部（seibu-s.co.jp）限定。外部 `user:` の IAM 追加は通る（DRS 非適用）が、当該アカウントは IAP サインインを完了できない（Error code 9＝Failed OAuth redirect）。** ＝**外部ゲストは実質入れない**。社外アクセスは ①**seibu-s の Workspace アカウントを発行**（既存 consent で入れる）②**リング1c の IAP 外・署名付き読み取り専用URL** のどちらか。External 化は IAP OAuth Admin API 廃止（2026-03）＋共有PJ全体影響で非推奨。確認＝`gcloud iap oauth-brands list --project=seibu-dispatch-poc-tky`（`orgInternalOnly` を見る）。
   - 注意：入れると**社内編集面フル（編集/保存可・削除は作成者本人のみ）＋顧客PIIに到達**。閲覧専用にはならない（見せるだけはリング1cの別サーフェス側）。ログイン後に特定の報告書へ着くには **launch token URL** を別途渡す（IAP通過だけではトップ止まり）。
   - 現在の付与者一覧＝`gcloud iap web get-iam-policy --resource-type=cloud-run --service=report-app-justdb --region=asia-northeast1 --project=seibu-dispatch-poc-tky`。
 
