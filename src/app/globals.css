@@ -373,6 +373,39 @@ button.btn-secondary {
   border: 1px solid #1d4ed8;
 }
 
+/* 表紙選択モーダルの写真グリッド */
+.cover-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+.cover-cell {
+  width: 100%;
+  padding: 0;
+  background: #fff;
+  color: var(--text);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  font-weight: 700;
+}
+.cover-cell img {
+  width: 100%;
+  height: 80px;
+  object-fit: cover;
+  display: block;
+}
+.cover-cell.selected {
+  border-color: var(--accent);
+}
+.cover-cell-no {
+  display: block;
+  font-size: 11px;
+  padding: 3px 4px;
+}
+
 /* 設定モーダル */
 .modal-backdrop {
   position: fixed;

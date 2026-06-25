@@ -8,7 +8,7 @@
  * 認可は起動トークン（folderId 一致）。IAP が「誰か」を担保。
  * 仕様: docs/architecture/slack-photo-report-architecture.md §5/§6
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PhotoAnnotator } from "@/components/photo-annotator";
 import { BRANCH, DISCLAIMER } from "@/lib/report-template";
 import type { PhotoReportView } from "@/lib/photo-report-source";
@@ -88,6 +88,8 @@ export function PhotoReportEditor({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [genPolling, setGenPolling] = useState(false); // AI再作成の完了待ち（ポーリング）
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false); // 表紙選択モーダル
 
   const setField = useCallback(<K extends keyof PhotoReportSettings>(key: K, value: PhotoReportSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -165,14 +167,75 @@ export function PhotoReportEditor({
       if (!res.ok) throw new Error(json?.error ?? `生成依頼に失敗（${res.status}）`);
       setMessage({
         type: "success",
-        text: "AI生成を依頼しました。1〜数分で完成します。少し待ってからページを再読み込みしてください。"
+        text: "AI生成を依頼しました。完成すると自動で通知します（数分かかります。このページは開いたままで）。"
       });
+      try {
+        if (typeof Notification !== "undefined" && Notification.permission === "default") {
+          void Notification.requestPermission();
+        }
+      } catch {
+        /* 通知が使えない環境は無視（アプリ内バナーで知らせる） */
+      }
+      setGenPolling(true);
     } catch (e) {
       setMessage({ type: "error", text: e instanceof Error ? e.message : "生成依頼に失敗しました。" });
     } finally {
       setGenerating(false);
     }
   }, [folderId, token]);
+
+  // 「AIで再作成」の完了をポーリングして知らせる（Web再作成はSlackスレッドが無いためアプリ内通知）。
+  useEffect(() => {
+    if (!genPolling) return;
+    let stop = false;
+    const started = Date.now();
+    const tick = async () => {
+      if (stop) return;
+      try {
+        const res = await fetch(
+          `/api/photo-report/generate?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+          { cache: "no-store" }
+        );
+        const json = await res.json();
+        if (res.ok && json.status === "done") {
+          stop = true;
+          setGenPolling(false);
+          setMessage({ type: "success", text: "✅ 完成しました。最新版を読み込みます…" });
+          try {
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+              new Notification("写真報告書", { body: "AIの再作成が完成しました。" });
+            }
+          } catch {
+            /* noop */
+          }
+          setTimeout(() => window.location.reload(), 1500);
+          return;
+        }
+        if (res.ok && json.status === "error") {
+          stop = true;
+          setGenPolling(false);
+          setMessage({ type: "error", text: "AI生成に失敗しました。設定を見直してもう一度お試しください。" });
+          return;
+        }
+      } catch {
+        /* 一時的な取得失敗は無視して継続 */
+      }
+      if (Date.now() - started > 10 * 60 * 1000) {
+        stop = true;
+        setGenPolling(false);
+        setMessage({
+          type: "error",
+          text: "完了確認がタイムアウトしました。少し待ってページを再読み込みしてください。"
+        });
+      }
+    };
+    const id = setInterval(tick, 8000);
+    void tick();
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
+  }, [genPolling, folderId, token]);
 
   const refreshVersions = useCallback(async () => {
     try {
@@ -531,8 +594,11 @@ export function PhotoReportEditor({
       </div>
 
       {versionsOpen ? (
-        <div className="section-block no-print">
-          <label>版履歴（新しい順）</label>
+        <div className="modal-backdrop no-print" onClick={() => setVersionsOpen(false)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="inline-actions">
+              <h2>管理（版履歴・新しい順）</h2>
+            </div>
           {versions === null ? (
             <p className="notice">読み込み中…</p>
           ) : versions.length === 0 ? (
@@ -589,21 +655,72 @@ export function PhotoReportEditor({
               })}
             </ul>
           )}
+            <div className="inline-actions">
+              <button type="button" className="btn-secondary" onClick={() => setVersionsOpen(false)}>
+                閉じる
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 
-      {/* ① 表紙（PDF 1ページ目）＝下の各写真の「☆ 表紙にする」で選んだ写真が表紙になる */}
+      {coverPickerOpen ? (
+        <div className="modal-backdrop no-print" onClick={() => setCoverPickerOpen(false)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="inline-actions">
+              <h2>表紙の写真を選ぶ</h2>
+            </div>
+            <p className="notice">フォルダの写真から表紙（PDF1ページ目）を選びます。後からいつでも入れ替えられます。</p>
+            {items.length === 0 ? (
+              <p className="notice">写真がありません。</p>
+            ) : (
+              <div className="cover-grid">
+                {items.map((it, i) => (
+                  <button
+                    key={it.fileId}
+                    type="button"
+                    className={`cover-cell${it.fileId === coverFileId ? " selected" : ""}`}
+                    onClick={() => {
+                      setCoverFileId(it.fileId);
+                      setCoverPickerOpen(false);
+                    }}
+                    title={`${i + 1}枚目${it.heading ? `「${it.heading}」` : ""}を表紙にする`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photoUrl(it.fileId, folderId, token)} alt={`写真 ${i + 1}`} />
+                    <span className="cover-cell-no">
+                      {i + 1}
+                      {it.fileId === coverFileId ? "・現在の表紙" : ""}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="inline-actions">
+              <button type="button" className="btn-secondary" onClick={() => setCoverPickerOpen(false)}>
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ① 表紙（PDF 1ページ目）＝フォルダの写真から1枚を表紙に選ぶ（後から入替可・AIも選択） */}
       <div className="editor-section no-print">
         <h2 className="editor-section-title">① 表紙（PDF 1ページ目）</h2>
         {coverItem ? (
           <div className="cover-pick">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="cover-thumb" src={photoUrl(coverItem.fileId, folderId, token)} alt="表紙写真" />
-            <p className="editor-hint">
-              現在の表紙：{items.findIndex((it) => it.fileId === coverItem.fileId) + 1}枚目
-              {coverItem.heading ? `「${coverItem.heading}」` : ""}。
-              変更は下の各写真の「☆ 表紙にする」から。実施日・現場・担当は「⚙️ 設定」で入力します。
-            </p>
+            <div>
+              <p className="editor-hint">
+                現在の表紙：{items.findIndex((it) => it.fileId === coverItem.fileId) + 1}枚目
+                {coverItem.heading ? `「${coverItem.heading}」` : ""}。フォルダの写真から選べます（後からいつでも入替可）。
+              </p>
+              <button type="button" className="btn-secondary" onClick={() => setCoverPickerOpen(true)}>
+                表紙を選ぶ
+              </button>
+            </div>
           </div>
         ) : (
           <p className="editor-hint">写真がありません。</p>
@@ -647,15 +764,6 @@ export function PhotoReportEditor({
                       </button>
                     </div>
                     <figcaption className="editor-field no-print">
-                      <button
-                        type="button"
-                        className={isCover ? "" : "btn-secondary"}
-                        onClick={() => setCoverFileId(item.fileId)}
-                        disabled={isCover}
-                        title="この写真を表紙にします"
-                      >
-                        {isCover ? "★ 表紙（この写真）" : "☆ 表紙にする"}
-                      </button>
                       <label htmlFor={`h-${item.fileId}`}>見出し（写真 {index + 1}）</label>
                       <input
                         id={`h-${item.fileId}`}

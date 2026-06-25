@@ -209,6 +209,14 @@ export async function requestGeneration(
   return { requeued: false };
 }
 
+/** WEB「AIで再作成」の完了監視用：folder の最新ジョブ状態を返す（queued|processing|done|error|null）。 */
+export async function getGenerationStatus(folderId: string): Promise<{ status: string | null }> {
+  const rows = await sbSelect<{ status: string }>(
+    `photo_report_jobs?folder_id=eq.${encodeURIComponent(folderId)}&select=status&order=id.desc&limit=1`
+  );
+  return { status: rows[0]?.status ?? null };
+}
+
 /**
  * 旧版へロールバック ＝ 旧版の内容で **新版を書く**（過去版は書き換えない＝監査に強い）。
  * folder_id は呼び出し側の認可済み folderId で上書きする（版ファイルの値を信用しない）。
