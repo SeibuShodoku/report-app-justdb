@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  *
  * 版（識別キー＝値上げ改定の前後）を一覧し、新しい改定版を作成する。
  * 見積エディタ／PDF（後続）は「見積日に有効な版」を引いて計算する＝定数はここが唯一の供給源。
- * 仕様: docs/spec/ring2-estimate.md（着手時）/ vision/case-portal.md §9
+ * 仕様: docs/spec/estimate/ring2-estimate.md（着手時）/ vision/case-portal.md §9
  */
 export default async function EstimateSettingsAdminPage() {
   let versions: EstimateSettingsVersion[] = [];

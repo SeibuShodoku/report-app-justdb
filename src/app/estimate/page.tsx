@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * 計算式設定（見積日に有効な版）と販売価格表を読み、明細の物理量から原価積算して
  * ライブ計算＋粗利を見せる。計算は純粋エンジン（estimate-calc.ts）をクライアントでも実行。
  * 保存（版管理・Drive）／A4 PDF は後続スライス（③④）。
- * 仕様: docs/spec/ring2-estimate.md（着手時）/ vision/case-portal.md §9
+ * 仕様: docs/spec/estimate/ring2-estimate.md（着手時）/ vision/case-portal.md §9
  */
 export default async function EstimateNewPage() {
   const today = new Date().toISOString().slice(0, 10);

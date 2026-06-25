@@ -8,7 +8,7 @@ VM 常駐で動かす。**2つのジョブ型を1プロセスで捌く**（D-DIG
   - 出力 `result_summary`＝**固定的な重要情報カード**（GAS が備考に反映）。構造化データ（受注金額等）は除外。`absorbed_ts` を job に書き、**畳み込み後 `slack_delta` を null で破棄**（短命）。
   - ループは写真優先→無ければ digest を1件。`drive`(RW) は digest 直書き用（**版スナップショットの書き手は report-app のみ**＝据置）。
 
-- 仕様/計画: `../docs/architecture/slack-photo-report-architecture.md`（正本・§7）/ `../docs/spec/slack-photo-report-impl-plan.md` §2・§6 / 中央契約 `../../contracts/case-digest/`
+- 仕様/計画: `../docs/architecture/slack-photo-report-architecture.md`（正本・§7）/ `../docs/spec/photo-report/slack-photo-report-impl-plan.md` §2・§6 / 中央契約 `../../contracts/case-digest/`
 - スキーマDDL（先に適用）: `../docs/supabase/slack-photo-report-schema.sql`＋`../docs/supabase/migrations/20260620003000_create_case_digest_jobs.sql`
 - **方式Y**：Cloud Run 直結IAP がヘッドレス用 audience を露出しない（統合IAPはプログラム的 audience を受けない＝実測確定）ため、worker は IAP 越しプロキシではなく Drive 直アクセス。案件フォルダは mgmt-strat 所有ツリー配下なので継承で読める（DWD不要）。
 - Claude は **VM の Team サブスク認証**で動く（追加 APIキー不要・D-AIDATA）。

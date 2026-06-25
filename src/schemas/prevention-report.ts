@@ -8,7 +8,7 @@ import { z } from "zod";
  * - キー＝`folder_id`（写真と同一機構）。`caseId`/`constructionId` は `/api/case` プリフィルの文脈。
  * - **使用薬剤必須**：施工内容の少なくとも1行に `chemical`（`superRefine`）。
  *
- * 仕様: docs/spec/ring1a-prevention-report.md / docs/vision/case-portal.md §4.5
+ * 仕様: docs/spec/prevention-report/ring1a-prevention-report.md / docs/vision/case-portal.md §4.5
  */
 
 /** 施工内容の1行（害虫→薬剤→処理方法のカスケード＋使用量・備考）。 */

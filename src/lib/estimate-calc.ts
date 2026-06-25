@@ -10,7 +10,7 @@
  * この設定を供給する。エンジン自身は「設定 × 入力 → 結果」の写像に徹する。
  *
  * 検算根拠＝JUST.DB 実エクスポート（`tests/estimate-calc.test.ts` の fixture）。
- * 仕様: docs/spec/ring2-estimate.md（着手時に起こす）/ vision/case-portal.md §9（リング2）。
+ * 仕様: docs/spec/estimate/ring2-estimate.md（着手時に起こす）/ vision/case-portal.md §9（リング2）。
  *
  * 計算モデル（実データで検算済み・1行あたり）:
  *   一般施工金額計算:

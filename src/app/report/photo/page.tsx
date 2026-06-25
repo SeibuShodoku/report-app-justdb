@@ -57,7 +57,7 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
           <h1>写真報告書</h1>
           <p className="notice error">
             Drive未設定です（.env に GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET /
-            GOOGLE_DRIVE_REFRESH_TOKEN）。手順: docs/spec/slack-photo-report-impl-plan.md §1a
+            GOOGLE_DRIVE_REFRESH_TOKEN）。手順: docs/spec/photo-report/slack-photo-report-impl-plan.md §1a
           </p>
         </section>
       </main>

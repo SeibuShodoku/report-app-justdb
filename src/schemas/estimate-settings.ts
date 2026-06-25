@@ -6,7 +6,7 @@ import type { EstimateSettings } from "@/lib/estimate-calc";
  *
  * 率・単価は計算エンジン `estimate-calc.ts` の `EstimateSettings` に対応する。
  * 版（識別キー＝値上げ改定の前後）は Supabase `estimate_settings` に持ち、管理画面で作成する。
- * 仕様: docs/spec/ring2-estimate.md（着手時）/ vision/case-portal.md §9（リング2）
+ * 仕様: docs/spec/estimate/ring2-estimate.md（着手時）/ vision/case-portal.md §9（リング2）
  */
 
 /** 計算式設定（率・単価）。 */

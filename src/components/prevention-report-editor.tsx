@@ -7,7 +7,7 @@
  * - 「確定（公開）」で確定成果物マニフェスト（`/api/report/confirm`）へ登録＝顧客可視の起点。
  * - **使用薬剤必須**は保存時にサーバー（schema superRefine）が弾く。
  * 認可は起動トークン（folderId 一致）。IAP が「誰か」を担保。
- * 仕様: docs/spec/ring1a-prevention-report.md / docs/vision/case-portal.md §4.5
+ * 仕様: docs/spec/prevention-report/ring1a-prevention-report.md / docs/vision/case-portal.md §4.5
  */
 import { useCallback, useEffect, useState } from "react";
 import type { PreventionReportDraft } from "@/schemas/prevention-report";

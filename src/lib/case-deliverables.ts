@@ -6,7 +6,7 @@
  * 中身の正本は Drive（`_ai/reports/<folder_id>/.../v{version}.json` ＋ 写真凍結 `_ai/assets/<deliverableId>/`）。
  * 本表はそれを指す索引で、Drive から再生成できる。
  *
- * 仕様: docs/vision/case-portal.md §4.5 / docs/spec/ring1a-prevention-report.md D6
+ * 仕様: docs/vision/case-portal.md §4.5 / docs/spec/prevention-report/ring1a-prevention-report.md D6
  */
 import { sbSelect, sbUpsert } from "@/lib/supabase-rest";
 import type { ReportType } from "@/lib/report-versions";

@@ -3,7 +3,7 @@
  *
  * 版（識別キー＝値上げ改定の前後）を持ち、見積日に有効な版を計算エンジンへ渡す。
  * DB は snake_case、アプリは camelCase。ここで相互変換する。
- * 仕様: docs/spec/ring2-estimate.md（着手時）/ vision/case-portal.md §9（リング2）
+ * 仕様: docs/spec/estimate/ring2-estimate.md（着手時）/ vision/case-portal.md §9（リング2）
  */
 import { sbSelect, sbUpsert, supabaseConfigured } from "@/lib/supabase-rest";
 import type { EstimateSettings } from "@/lib/estimate-calc";

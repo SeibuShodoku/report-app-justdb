@@ -7,7 +7,7 @@
  * 写真と folder_id を共有しても衝突しないよう **`prevention/` サブフォルダに名前空間分離**する
  * （写真は `_ai/reports/<folder_id>/` 直下のまま不変）。AI 生成（再生成）は持たない＝人入力のみ。
  *
- * 仕様: docs/spec/ring1a-prevention-report.md / docs/vision/case-portal.md §4.5
+ * 仕様: docs/spec/prevention-report/ring1a-prevention-report.md / docs/vision/case-portal.md §4.5
  */
 import {
   createTextFile,

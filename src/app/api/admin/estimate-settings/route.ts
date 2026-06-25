@@ -3,7 +3,7 @@
  * - GET  : 版一覧
  * - POST : 版を作成（＝値上げ改定）
  * 認可は IAP（@seibu-s.co.jp SSO）。作成者は IAP メールを記録。
- * 仕様: docs/spec/ring2-estimate.md（着手時）
+ * 仕様: docs/spec/estimate/ring2-estimate.md（着手時）
  */
 import { createSettingsVersion, listSettingsVersions } from "@/lib/estimate-settings-store";
 import { estimateSettingsVersionInputSchema } from "@/schemas/estimate-settings";

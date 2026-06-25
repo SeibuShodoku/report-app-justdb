@@ -7,7 +7,7 @@
  * 物理量を入れると純粋エンジン（estimate-calc.ts）で原価積算→標準価格→粗利をライブ計算する。
  * 薬剤は販売価格表（props・表示順は sort_order=JUST.DB順）から検索つきセレクトで選び、単価/掛率/単位を取り込む。
  * 計算式設定は props（見積日に有効な版）。保存／版管理／A4 PDF は後続（③④）。
- * 認可はページが IAP 社内SSO 配下。仕様: docs/spec/ring2-estimate.md（着手時）
+ * 認可はページが IAP 社内SSO 配下。仕様: docs/spec/estimate/ring2-estimate.md（着手時）
  */
 import { useMemo, useState } from "react";
 import {
