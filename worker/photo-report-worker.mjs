@@ -40,6 +40,12 @@ const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS ?? "300000");
 // 文脈(digest/版履歴)が育つほど深い思考は不要、の方針。env で上書き可。effort= low/medium/high/xhigh/max。
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-8";
 const CLAUDE_EFFORT = process.env.CLAUDE_EFFORT ?? "medium";
+// アカウント・フォールバック（mgmt の週次使用上限対策・sentinel と同じ考え方）。
+// claude の資格情報ディレクトリ `CLAUDE_CONFIG_DIR` でアカウントを切り替える。
+// CLAUDE_CONFIG_DIR=primary(mgmt)。空＝claude既定(~/.claude)。
+// CLAUDE_CONFIG_DIR_FALLBACK=2nd(ishibashi)。空＝フォールバック無効（従来動作）。
+const CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR ?? "";
+const CLAUDE_CONFIG_DIR_FALLBACK = process.env.CLAUDE_CONFIG_DIR_FALLBACK ?? "";
 const TOKEN_URI = "https://oauth2.googleapis.com/token";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const UPLOAD_API = "https://www.googleapis.com/upload/drive/v3"; // ダイジェスト直書き（media/multipart）用
@@ -460,19 +466,25 @@ function buildPrompt(ctx, docFileNames, hasDigest, settings) {
   ].join("\n");
 }
 
-/** VM の Claude Code をヘッドレス起動して report.json を書かせる。stdout/stderr を返す。 */
-function runClaude(dir, prompt) {
+/**
+ * VM の Claude Code をヘッドレスで1回起動して report.json を書かせる。stdout/stderr を返す。
+ * configDir を渡すと CLAUDE_CONFIG_DIR を上書き＝そのアカウントで実行（アカウント切替に使う）。
+ * タイムアウトは err.timeout=true を付けて返す（フォールバック判定に使う＝上限超過は即失敗で来るため）。
+ */
+function runClaudeOnce(dir, prompt, configDir) {
   return new Promise((resolve, reject) => {
     // 権限プロンプトで止まらないようヘッドレス用フラグ＋モデル/エフォート（per-run）。
     const args = ["-p", prompt, "--permission-mode", "acceptEdits", "--model", CLAUDE_MODEL, "--effort", CLAUDE_EFFORT];
-    const child = spawn(CLAUDE_BIN, args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+    const env = { ...process.env };
+    if (configDir) env.CLAUDE_CONFIG_DIR = configDir;
+    const child = spawn(CLAUDE_BIN, args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"], env });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      reject(new Error("Claude Code がタイムアウトしました。"));
+      reject(Object.assign(new Error("Claude Code がタイムアウトしました。"), { timeout: true }));
     }, CLAUDE_TIMEOUT_MS);
     child.on("error", (e) => { clearTimeout(timer); reject(e); });
     child.on("close", (code) => {
@@ -481,6 +493,29 @@ function runClaude(dir, prompt) {
       else resolve({ stdout, stderr });
     });
   });
+}
+
+/**
+ * primary(mgmt) アカウントで実行し、失敗したら **無言で 2nd(ishibashi) アカウントへ切替**えて再実行する
+ * （mgmt の週次使用上限対策）。報告書/ダイジェスト共通。タイムアウトはフォールバックしない（上限超過は
+ * 即失敗で来るため・遅延の二重待ちを避ける）。フォールバック未設定なら従来どおり1回で終わる。
+ */
+async function runClaude(dir, prompt) {
+  try {
+    return await runClaudeOnce(dir, prompt, CLAUDE_CONFIG_DIR || undefined);
+  } catch (primaryErr) {
+    const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+    if (!CLAUDE_CONFIG_DIR_FALLBACK || (primaryErr && primaryErr.timeout)) throw primaryErr;
+    console.warn(`[fallback] primary失敗→2ndアカウントへ切替: ${msg}`);
+    try {
+      const r = await runClaudeOnce(dir, prompt, CLAUDE_CONFIG_DIR_FALLBACK);
+      console.log("[fallback] 2ndアカウントで成功");
+      return r;
+    } catch (fallbackErr) {
+      const fmsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      throw new Error(`両アカウントで失敗。primary=${msg} / fallback=${fmsg}`);
+    }
+  }
 }
 
 /** claude の stdout から JSON オブジェクトを取り出す（ファイル未生成時のフォールバック/診断用）。 */

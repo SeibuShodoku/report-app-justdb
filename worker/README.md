@@ -31,9 +31,14 @@ MAX_CONTEXT_DOCS=5
 MAX_DIGEST_DOCS=6     # ダイジェスト1回で新規に読む未読書類の上限（既読は再読しない）
 CLAUDE_TIMEOUT_MS=300000
 MAX_ATTEMPTS=8        # 試行上限。到達ジョブは Claude を回さず error 確定（暴走防止）
+# アカウント・フォールバック（mgmt の週次使用上限対策・sentinel と同じ考え方）
+CLAUDE_CONFIG_DIR=             # primary(mgmt) の資格情報ディレクトリ。空＝claude既定(~/.claude)
+CLAUDE_CONFIG_DIR_FALLBACK=    # 2nd(ishibashi) の資格情報ディレクトリ。設定すると primary 失敗時に無言で切替。空＝無効
 ```
 
 > 既定は **Opus 4.8 / effort medium**（文脈が育つほど深い思考は不要、の方針）。env で上書き可。sentinel の夜間学習は別プロジェクト（`run-nightly.sh`＝Opus 4.8 / xhigh）。
+>
+> **アカウント・フォールバック**：`CLAUDE_CONFIG_DIR_FALLBACK` を ishibashi アカウントの資格情報ディレクトリ（別途 `CLAUDE_CONFIG_DIR=<その場所> claude login` で作成）に向けると、**mgmt が週次上限に達して `claude` が失敗したとき、無言で ishibashi アカウントへ切り替えて再実行**する（報告書・ダイジェスト共通）。タイムアウトは切替しない（上限超過は即失敗で来るため）。未設定なら従来どおり1アカウントのみ。
 
 VM では秘密を `worker.env`（mode 600・KEY=value 形式）に置き、`run.sh` が `set -a; . ./worker.env` で読み込む。
 
