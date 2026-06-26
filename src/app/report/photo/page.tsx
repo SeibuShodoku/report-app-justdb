@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { PhotoReportEditor } from "@/components/photo-report-editor";
 import { driveConfigured } from "@/lib/drive";
-import { loadPhotoReportView } from "@/lib/photo-report-source";
+import { hasStoredReport, loadPhotoReportView } from "@/lib/photo-report-source";
 import { loadSettings } from "@/lib/photo-report-settings-store";
 import { iapUserEmail } from "@/lib/security/iap-user";
 import { verifyLaunchToken } from "@/lib/security/launch-token";
@@ -71,10 +71,12 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
 
   let view;
   let settings;
+  let hasReport = false;
   try {
-    [view, settings] = await Promise.all([
+    [view, settings, hasReport] = await Promise.all([
       loadPhotoReportView(caseId, safeFolderId),
-      loadSettings(safeFolderId)
+      loadSettings(safeFolderId),
+      hasStoredReport(safeFolderId)
     ]);
   } catch (error) {
     return (
@@ -102,6 +104,7 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
         folderId={safeFolderId}
         token={safeToken}
         currentUserEmail={currentUserEmail ?? undefined}
+        hasReport={hasReport}
       />
     </main>
   );

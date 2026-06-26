@@ -47,6 +47,7 @@ type Props = {
   folderId: string;
   token: string;
   currentUserEmail?: string;
+  hasReport?: boolean; // 保存済み報告書があるか（AIボタンの文言＝作成/再作成の判定）
 };
 
 /** ISO日付(YYYY-MM-DD)を「YYYY年M月D日」に整形。ISOでなければそのまま返す（旧・手入力の互換）。 */
@@ -78,7 +79,8 @@ export function PhotoReportEditor({
   caseId,
   folderId,
   token,
-  currentUserEmail
+  currentUserEmail,
+  hasReport
 }: Props & { initialView: PhotoReportView; initialSettings: PhotoReportSettings }) {
   const [items, setItems] = useState<EditItem[]>(() => toEditItems(initialView));
   const [coverFileId, setCoverFileId] = useState<string>(
@@ -99,6 +101,8 @@ export function PhotoReportEditor({
   const [genPolling, setGenPolling] = useState(false); // AI再作成の完了待ち（ポーリング）
   const [coverPickerOpen, setCoverPickerOpen] = useState(false); // 表紙選択モーダル
   const [reorderOpen, setReorderOpen] = useState(false); // 並べ替えモーダル
+  // 保存済み報告書の有無（AIボタン文言＝作成/再作成）。保存/生成依頼で true に倒す（リロードを待たず更新）。
+  const [reportExists, setReportExists] = useState<boolean>(hasReport ?? false);
 
   // モーダル表示中は背景(編集画面)のスクロール/プル更新を凍結。並べ替えは自前で凍結するため除く。
   useBodyScrollLock(settingsOpen || versionsOpen || coverPickerOpen);
@@ -133,36 +137,56 @@ export function PhotoReportEditor({
       const list = Array.from(files);
       setUploading(true);
       setMessage(null);
+      let ok = 0;
       try {
-        const fd = new FormData();
-        for (const f of list) fd.append("file", f);
-        const res = await fetch(
-          `/api/photo-report/upload?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
-          { method: "POST", body: fd }
-        );
-        const json = await res.json();
-        const up = (json?.uploaded ?? []) as Array<{ id: string; name: string }>;
-        // 成功分（部分成功含む）を末尾に追記。並び＝送信順なので list[i] と対応。
-        if (up.length > 0) {
-          setItems((prev) => [
-            ...prev,
-            ...up.map((u, i) => ({
-              fileId: u.id,
-              name: u.name,
-              mimeType: list[i]?.type ?? "image/jpeg",
-              heading: "",
-              annotationNote: "",
-              annotations: [] as Annotation[]
-            }))
-          ]);
+        // 1枚ずつ送る：複数を1リクエストにまとめると Cloud Run の最大リクエストサイズ(32MB)を
+        // 超え、プラットフォームが HTML(413等) を返して JSON 解析に失敗するため。
+        for (let i = 0; i < list.length; i++) {
+          const f = list[i];
+          setMessage({ type: "success", text: `アップロード中… ${i + 1}/${list.length}枚（${f.name}）` });
+          const fd = new FormData();
+          fd.append("file", f);
+          const res = await fetch(
+            `/api/photo-report/upload?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+            { method: "POST", body: fd }
+          );
+          // 応答が JSON とは限らない（413/認証切れ等は HTML が返る）。content-type を見て安全に扱う。
+          const ctype = res.headers.get("content-type") ?? "";
+          const json = ctype.includes("application/json") ? await res.json() : null;
+          if (!res.ok || !json) {
+            const hint =
+              res.status === 413
+                ? "写真が大きすぎます。"
+                : res.status === 401 || res.status === 403
+                  ? "ログインが切れた可能性。ページを開き直してください。"
+                  : "";
+            throw new Error(`${f.name}: アップロード失敗（HTTP ${res.status}）${hint ? "＝" + hint : ""}`);
+          }
+          const u = ((json.uploaded ?? []) as Array<{ id: string; name: string }>)[0];
+          if (u) {
+            setItems((prev) => [
+              ...prev,
+              {
+                fileId: u.id,
+                name: u.name,
+                mimeType: f.type || "image/jpeg",
+                heading: "",
+                annotationNote: "",
+                annotations: [] as Annotation[]
+              }
+            ]);
+            ok++;
+          }
         }
-        if (!res.ok) throw new Error(json?.error ?? `アップロードに失敗（${res.status}）`);
         setMessage({
           type: "success",
-          text: `${up.length}枚アップロードしました。並べ替え・見出し付けができます（「報告書保存」で新版になります）。`
+          text: `${ok}枚アップロードしました。並べ替え・見出し付けができます（「報告書保存」で新版になります）。`
         });
       } catch (e) {
-        setMessage({ type: "error", text: e instanceof Error ? e.message : "アップロードに失敗しました。" });
+        setMessage({
+          type: "error",
+          text: (e instanceof Error ? e.message : "アップロードに失敗しました。") + (ok > 0 ? `（${ok}枚は成功）` : "")
+        });
       } finally {
         setUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = ""; // 同じ写真を選び直せるように
@@ -215,7 +239,10 @@ export function PhotoReportEditor({
   }, [folderId, token, settings]);
 
   const generate = useCallback(async () => {
-    if (!window.confirm("現在の設定で AI に報告書を作り直させます（現在版は上書きされます）。よろしいですか？")) {
+    const confirmText = reportExists
+      ? "現在の設定で AI に報告書を作り直させます（現在版は上書きされます）。よろしいですか？"
+      : "現在の写真と設定で AI に報告書の下書きを作らせます。よろしいですか？";
+    if (!window.confirm(confirmText)) {
       return;
     }
     setGenerating(true);
@@ -227,6 +254,7 @@ export function PhotoReportEditor({
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? `生成依頼に失敗（${res.status}）`);
+      setReportExists(true); // 依頼後は以降「再作成」表記に
       setMessage({
         type: "success",
         text: "AI生成を依頼しました。完成すると自動で通知します（数分かかります。このページは開いたままで）。"
@@ -244,7 +272,7 @@ export function PhotoReportEditor({
     } finally {
       setGenerating(false);
     }
-  }, [folderId, token]);
+  }, [folderId, token, reportExists]);
 
   // 「AIで再作成」の完了をポーリングして知らせる（Web再作成はSlackスレッドが無いためアプリ内通知）。
   useEffect(() => {
@@ -338,6 +366,7 @@ export function PhotoReportEditor({
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? `保存に失敗（${res.status}）`);
+      setReportExists(true); // 保存後は報告書が存在＝以降「再作成」表記に
       setMessage({
         type: "success",
         text: `保存しました（v${json.version}）。版名は「管理」から付けられます。`
@@ -469,7 +498,7 @@ export function PhotoReportEditor({
           {saving ? "保存中…" : "報告書保存"}
         </button>
         <button type="button" className="btn-secondary" onClick={generate} disabled={generating}>
-          {generating ? "依頼中…" : "AIで再作成"}
+          {generating ? "依頼中…" : reportExists ? "AIで再作成" : "AIで作成"}
         </button>
         <button
           type="button"

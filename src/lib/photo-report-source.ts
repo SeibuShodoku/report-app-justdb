@@ -118,6 +118,22 @@ async function loadStoredReport(folderId: string): Promise<StoredReportJson | nu
 }
 
 /**
+ * フォルダに保存済み報告書（AI生成 or 人の保存）が1件でもあるか。
+ * 「AIで作成（初回）／AIで再作成（既存あり）」のボタン文言判定に使う。失敗時は false。
+ */
+export async function hasStoredReport(folderId: string): Promise<boolean> {
+  if (!supabaseConfigured()) return false;
+  try {
+    const rows = await sbSelect<{ folder_id: string }>(
+      `photo_reports?folder_id=eq.${encodeURIComponent(folderId)}&select=folder_id&limit=1`
+    );
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * フォルダの写真からプリフィル用ビューを読み込む。
  * AI 生成 report JSON（Supabase）があれば、それで見出し・注記・並び・要約を上書きする。
  */

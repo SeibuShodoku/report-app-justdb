@@ -4,9 +4,21 @@ import { authorizeFolderAccess } from "@/lib/security/proxy-auth";
 // Drive 書込み（RW）を行うため Node ランタイム固定。
 export const runtime = "nodejs";
 
-const MAX_FILES = 30; // 1リクエストの上限枚数
-const MAX_BYTES = 25 * 1024 * 1024; // 1枚の上限（25MB）
-const ALLOWED = /^image\//; // 画像のみ（HEIC含む image/* を許容）
+const MAX_FILES = 30; // 1リクエストの上限枚数（クライアントは原則1枚ずつ送る＝Cloud Run 32MB制限回避）
+const MAX_BYTES = 25 * 1024 * 1024; // 1枚の上限（25MB・Cloud Runの32MB未満に収める）
+const ALLOWED = /^image\//; // 画像MIME（HEIC含む image/* を許容）
+const IMG_EXT = /\.(jpe?g|png|heic|heif|webp|gif|bmp|tiff?)$/i; // iOS等で type が空のときの救済
+
+/** File の MIME を決める。type が image/* ならそれ、無ければ拡張子から補完（既定 image/jpeg）。 */
+function mimeFor(file: File): string {
+  if (ALLOWED.test(file.type)) return file.type;
+  const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] ?? "").toLowerCase();
+  const map: Record<string, string> = {
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", heic: "image/heic",
+    heif: "image/heif", webp: "image/webp", gif: "image/gif", bmp: "image/bmp", tif: "image/tiff", tiff: "image/tiff"
+  };
+  return map[ext] ?? "image/jpeg";
+}
 
 /**
  * 現場写真を WEB からその日の写真フォルダ（folderId）へ直接アップロードする（案件ポータル動線・フェーズ1）。
@@ -48,7 +60,7 @@ export async function POST(request: Request) {
   const uploaded: Array<{ id: string; name: string }> = [];
   try {
     for (const file of files) {
-      if (!ALLOWED.test(file.type)) {
+      if (!ALLOWED.test(file.type) && !IMG_EXT.test(file.name)) {
         return Response.json({ error: `画像以外は受け付けません（${file.name}）。` }, { status: 400 });
       }
       if (file.size > MAX_BYTES) {
@@ -59,7 +71,7 @@ export async function POST(request: Request) {
       }
       const buf = Buffer.from(await file.arrayBuffer());
       const name = (file.name || `photo-${Date.now()}.jpg`).replace(/[\\/:*?"<>|]/g, "_").slice(0, 120);
-      uploaded.push(await uploadImageFile(folderId, name, file.type, buf));
+      uploaded.push(await uploadImageFile(folderId, name, mimeFor(file), buf));
     }
   } catch (error) {
     // 途中まで成功している場合もあるので、成功分を返しつつエラーを伝える。
