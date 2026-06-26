@@ -424,15 +424,22 @@ button.btn-secondary {
 }
 
 /* 並べ替えモーダル（俯瞰グリッド・長押しドラッグ） */
+.reorder-scroll {
+  max-height: 60vh;
+  overflow-y: auto;
+  /* ジェスチャの主導権をこちらが完全に握る（ブラウザのスクロール/プル更新に奪わせない）。
+     指スクロールは JS で scrollTop を動かす。 */
+  touch-action: none;
+  overscroll-behavior: contain;
+  margin: 8px 0;
+}
+.reorder-scroll.dragging {
+  cursor: grabbing;
+}
 .reorder-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 8px;
-  margin: 8px 0;
-  touch-action: pan-y; /* 既定は縦スクロール可。ドラッグ確定で none に切替 */
-}
-.reorder-grid.dragging {
-  touch-action: none;
 }
 .reorder-cell {
   position: relative;
@@ -499,6 +506,7 @@ button.btn-secondary {
   place-items: center;
   padding: 16px;
   z-index: 50;
+  overscroll-behavior: contain; /* 背景ページへスクロールが伝播しない */
 }
 
 .modal {

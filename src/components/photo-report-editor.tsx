@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { PhotoAnnotator } from "@/components/photo-annotator";
 import { PhotoReorderModal } from "@/components/photo-reorder-modal";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { BRANCH, DISCLAIMER } from "@/lib/report-template";
 import type { PhotoReportView } from "@/lib/photo-report-source";
 import type { Annotation } from "@/schemas/photo-report";
@@ -98,6 +99,9 @@ export function PhotoReportEditor({
   const [genPolling, setGenPolling] = useState(false); // AI再作成の完了待ち（ポーリング）
   const [coverPickerOpen, setCoverPickerOpen] = useState(false); // 表紙選択モーダル
   const [reorderOpen, setReorderOpen] = useState(false); // 並べ替えモーダル
+
+  // モーダル表示中は背景(編集画面)のスクロール/プル更新を凍結。並べ替えは自前で凍結するため除く。
+  useBodyScrollLock(settingsOpen || versionsOpen || coverPickerOpen);
 
   const setField = useCallback(<K extends keyof PhotoReportSettings>(key: K, value: PhotoReportSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));

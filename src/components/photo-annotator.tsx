@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Annotation, AnnotationPoint } from "@/schemas/photo-report";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 
 type Tool = "select" | "circle" | "rect" | "line" | "arrow" | "freehand" | "text";
 
@@ -59,6 +60,7 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
   // モバイルで pointerdown 中に開くと閉じても再発火する＝無限に開き直す不具合があるため使わない）。
   const [textDraft, setTextDraft] = useState<AnnotationPoint | null>(null);
   const [textValue, setTextValue] = useState("");
+  useBodyScrollLock(textDraft !== null); // 文字入力モーダル中は背景を凍結
 
   // UNDO/REDO 用スナップショット（onChange を起こす確定操作の前後で積む）。
   const [past, setPast] = useState<Annotation[][]>([]);
