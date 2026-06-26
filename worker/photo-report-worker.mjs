@@ -63,6 +63,7 @@ const annotationSchema = z.object({
   asset: z.string().max(120).optional()
 });
 const reportJsonSchema = z.object({
+  coverFileId: z.string().max(200).optional(), // 表紙にする写真の fileId（AIが代表1枚を選ぶ・不正/未指定は編集面が先頭にフォールバック）
   headerSummary: z.string().max(2000).optional(),
   workItems: z.array(z.string().max(300)).max(50).default([]), // 施工内容/調査内容（最終ページ）
   photoItems: z
@@ -450,10 +451,11 @@ function buildPrompt(ctx, docFileNames, hasDigest, settings) {
     "・各写真の見出し(heading)は **全角20字以内** の簡潔な作業名（例『103号室の風呂場下の木部を穿孔処理』『大引きに薬剤を散布処理』『使用薬剤』）。",
     "・所見(annotationNote)は基本不要（空でよい）。見出しで足りる。",
     "・写真は意味の通る順（部屋ごと・工程順）に並べ替えてよい。",
+    "・表紙(coverFileId)に、案件や現場・作業全体が最も伝わる代表的な1枚（建物外観・現場全景・対象がはっきり写った象徴的な写真）の fileId を選ぶ。クレーム/被害が主題ならその被害が分かる1枚でもよい。**coverFileId は必ず photoItems のどれかの fileId と一致**させること。",
     `・headerSummary は${kind}概要（まとめ）。上記の文体・トーンで2〜3文。`,
     `・workItems は実施した${kind}内容を **数項目に集約** した配列（各項目1文・場所＋処理を簡潔に。例『101号室・102号室・103号室の床下に木部剤・土壌剤を散布処理』）。最終ページの一覧に使う。`,
     "出力は **このディレクトリに report.json を1つ書き出す**こと。形式は厳密に次のJSONのみ:",
-    '{ "headerSummary": "…", "workItems": ["…","…"], "photoItems": [ { "fileId": "<画像ファイル名から拡張子を除いた部分>", "heading": "…" } ] }',
+    '{ "coverFileId": "<代表写真のfileId>", "headerSummary": "…", "workItems": ["…","…"], "photoItems": [ { "fileId": "<画像ファイル名から拡張子を除いた部分>", "heading": "…" } ] }',
     "fileId は各**画像**ファイル名の拡張子を除いた部分（例 1AbC.jpg → 1AbC）。case-digest.md / context-*.pdf は文脈用で報告対象ではない。JSON以外の文章は report.json に書かないこと。"
   ].join("\n");
 }
@@ -542,9 +544,13 @@ async function processJob(job) {
       }
     }
     const reportJson = reportJsonSchema.parse(JSON.parse(raw));
+    // 表紙：AIが選んだ coverFileId が実在写真でなければ落とす（編集面が先頭にフォールバック）。
+    if (reportJson.coverFileId && !reportJson.photoItems.some((p) => p.fileId === reportJson.coverFileId)) {
+      delete reportJson.coverFileId;
+    }
     await upsertReport(job.folder_id, job.case_id, reportJson);
     await finishJob(job.id, { status: "done", error: null });
-    console.log(`[done] job=${job.id} folder=${job.folder_id} photos=${images.length} digest=${digest ? "yes" : "no"} docs=${docNames.length} items=${reportJson.photoItems.length}`);
+    console.log(`[done] job=${job.id} folder=${job.folder_id} photos=${images.length} digest=${digest ? "yes" : "no"} docs=${docNames.length} items=${reportJson.photoItems.length} cover=${reportJson.coverFileId ? "ai" : "default"}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await finishJob(job.id, { status: "error", error: message.slice(0, 1000) });
