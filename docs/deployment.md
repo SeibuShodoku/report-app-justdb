@@ -14,7 +14,7 @@
 | OAuthクライアント（Drive読取） | `seibu-dispatch-poc-tky` | dispatch の既存クライアントを**流用**（client_id 先頭=プロジェクト番号 137338258930） |
 | Drive API | `seibu-dispatch-poc-tky` で有効化 | 未有効だと 403 SERVICE_DISABLED |
 | ワーカー用SA `report-worker-iap` | `seibu-dispatch-poc-tky` | 権限は **`iap.httpsResourceAccessor` のみ**（report-app への“通行証”）。**旧 Option B 用・現在未使用**（Option A＝worker が Drive 直書きで IAP 越え不要・D-DIGEST 項5） |
-| Claude VM（AIワーカー実行） | **`seibot-proxy`**（別プロジェクト） | 汎用エージェントを顧客データPJから分離。**Option A 以降は mgmt-strat の Drive OAuth（`GOOGLE_DRIVE_REFRESH_TOKEN`＝RW）を保持し、Drive を直読み／直書き**（`_ai/digest.md` 等）。IAP は越えない |
+| Claude VM（AIワーカー実行） | **`seibot-proxy`**（別プロジェクト） | 汎用エージェントを顧客データPJから分離。**Option A 以降は mgmt-strat の Drive OAuth（`GOOGLE_DRIVE_REFRESH_TOKEN`＝RW）を保持し、Drive を直読み／直書き**（`_ai/digest.md` 等）。IAP は越えない。**worker 実体＝`/mnt/claude-data/projects/photo-report-worker/`（git checkout ではなくファイルコピー＝`git pull` 不可。更新は VM で `git clone --depth 1 git@github.com:SeibuShodoku/report-app-justdb.git` → `worker/photo-report-worker.mjs` を cp → `systemctl restart photo-report-worker`）。Claude 週次上限時は `CLAUDE_CONFIG_DIR_FALLBACK=~/.claude-acc2`(ishibashi) へ無言フォールバック（worker/README.md）** |
 | アプリのコード | GitHub `SeibuShodoku/report-app-justdb` | — |
 
 ## IAP アクセスモデル

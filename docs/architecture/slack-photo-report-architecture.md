@@ -143,10 +143,17 @@
   - **版名・削除**：版名＝Drive `description`（保存時付与＋後編集 `POST …/rename`・本文不変）。削除＝Drive ゴミ箱（`POST …/delete`・復元可・**最新版は不可**・**作成者本人のみ**＝IAPメールと `createdBy` を照合）。
   - **注記（§6）**＝`PhotoAnnotator`：写真上の透明SVG＋Pointer Events（マウス/指/ペン）。赤丸/囲み/矢印/線/手書き/テキスト、色、選択/削除、UNDO/REDO（配列）。座標は0〜1正規化（実表示boxをResizeObserverで測り均一px空間で描画＝歪まない）。注記は report JSON の一部＝版に同梱・ロールバックで一緒に戻る。
   - 書くのは report-app（RWトークン）。ワーカーは readonly 据置。**ブラウザ確認済（2026-06-19）**：保存→v0001/v0002 生成、版一覧、ロールバック。版名/削除は実装直後（要通し）。
-- ✅ **設定モーダル＋PDF体裁（2026-06-19）**：`photo_report_settings`（種類/実施日/物件名/担当者/トーン4種）＋⚙️設定モーダル＋「AIで再作成」(`/api/photo-report/{settings,generate}`)。ワーカーが設定をプロンプト反映（見出し≤20・`workItems` 生成）。印刷を齋藤マンション様 PDF 体裁（表紙/番号付きグリッド/概要・内容・免責）に。**残＝Slack「⚙️設定」のURL導線・物件名のJUST.DB取得**。
+- ✅ **設定モーダル＋PDF体裁（2026-06-19）**：`photo_report_settings`（種類/実施日/物件名/担当者/トーン4種）＋⚙️設定モーダル＋「AIで再作成」(`/api/photo-report/{settings,generate}`)。ワーカーが設定をプロンプト反映（見出し≤20・`workItems` 生成）。印刷を齋藤マンション様 PDF 体裁（表紙/番号付きグリッド/概要・内容・免責）に。**残＝物件名のJUST.DB取得**（Slack「⚙️設定」のURL導線＝2026-06-26 実装・本人デプロイ済＝`pr_handleSettings_`）。
 - ✅ **ダイジェスト“生成” Phase D1（worker側・2026-06-20 実装/E2E済）**：`case_digest_jobs` 投入 → VM ワーカーが未読書類＋Slack増分をマージ要約 → **`_ai/digest.md`・`slack-summary-history.md` を Drive 直書き（Option A）**＋トピック要約を `result_summary` へ。専用テストフォルダで E2E 検証（digest.md 整形・既読マーカー round-trip・履歴追記・2キュー相乗り）。IAP は B案断念で越えない。
 - ✅ **ダイジェスト Phase D2（統一正本モデル・GAS切替）＝2026-06-20 本番切替完了**：worker（digest.md 4部構成・2カーソル・重要情報カード=result_summary・absorbed_ts・slack_delta 破棄）＋ migration（absorbed_ts/applied_at）＋ GAS（`supabaseClient.gs`・`td_enqueueCase_`/`topicDigest_applyDone`）。本番で enqueue→VM→digest.md→Slack chat.update を実証（実案件 001926 等）。**旧 `summarizer.gs` 撤去で GAS から ANTHROPIC_API_KEY 参照消滅＝API 課金停止**（残＝Anthropic コンソールでキー失効＝ユーザー）。
 - ✅ **編集UX刷新・PDF実機E2E（2026-06-25・rev `report-app-justdb-00032-zj4`）**：画面に PDF構成（①表紙/②写真/③まとめ）を明示。**表紙＝フォルダ写真から選ぶモーダル**（各写真☆廃止・★表紙バッジ・後から入替可）。**管理（版履歴）もモーダル化**（設定と同作法）。アクションバー階層化（報告書保存=緑/AIで再作成=灰/PDF出力=青/プレビュー=青枠・版名入力廃止→版名は管理の rename）。**実施日＝date ピッカー**（PDF表示は YYYY年M月D日）。各写真「所見」は grid-8 で非表示（detail-3 用に温存・データ保持）。**Web「AIで再作成」の完了をポーリング通知＋自動リロード**（`GET /api/photo-report/generate`）。Slack 起点は完了＝スレッド push（`pr_notifyDoneJobs`）＋URL＝エフェメラル（`pr_open`）で据置。**サーバーPDF 実機E2E済**（日本語OK・赤丸整合OK・grid-8 のキャプション/写真の重なりを修正＝caption 9mm 固定行＋画像 max50mm）。検証手順＝`../spec/photo-report/pdf-e2e-checklist.md`。
+- ✅ **モバイルUX修正・Web写真アップロード・AI表紙・上限フォールバック（2026-06-27・rev `report-app-justdb-00036-8n7`）**：
+  - **モバイルUX**（rev 00033/00034）：注記の文字ツールを **click起点のアプリ内モーダル**化（pointerdown内 `window.prompt` の無限再オープン解消）。写真並べ替えを **俯瞰モーダル＋長押しドラッグ**（`photo-reorder-modal.tsx`・`touch-action:none`で主導権確保・端で自動スクロール・↑↓保険）。モーダル表示中は **背景スクロール/プル更新を凍結**（`useBodyScrollLock`・position:fixed方式）。
+  - **Web写真アップロード（案件ポータル フェーズ1）**：`POST /api/photo-report/upload`＋`drive-write.uploadImageFile`＋写真ゼロ状態UI。**1枚ずつ送信**（Cloud Run 32MB回避）・iOS HEICはtype空でも拡張子救済・結果はitems追記でリロードしない。詳細＝`../spec/photo-report/case-portal-flow.md`。
+  - **AI表紙選択（#4）**：worker が report.json に `coverFileId`（代表1枚）を出力（不正は先頭フォールバック）。
+  - **AIボタン文言**：`hasStoredReport` で「AIで作成（初回）/再作成（既存）」を出し分け。
+  - **アカウント・フォールバック（VM worker・実機検証済）**：mgmt の Claude 週次上限時に**無言で2nd(ishibashi)アカウントへ切替**（`CLAUDE_CONFIG_DIR`方式）。報告書/ダイジェスト共通。詳細＝`../../[memory]` / `worker/README.md`。
+  - **Slack「⚙️設定」のURL導線**：hub-gas `pr_handleSettings_` が本人専用URLを発行（本人が手動デプロイ済）。
 
 ## 11. 決定ログ（要点）
 - **D-AIDATA**：顧客データは Team/API（閉空間）へなら渡してよい。
