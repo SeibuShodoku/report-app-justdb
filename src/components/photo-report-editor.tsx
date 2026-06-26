@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { PhotoAnnotator } from "@/components/photo-annotator";
+import { PhotoReorderModal } from "@/components/photo-reorder-modal";
 import { BRANCH, DISCLAIMER } from "@/lib/report-template";
 import type { PhotoReportView } from "@/lib/photo-report-source";
 import type { Annotation } from "@/schemas/photo-report";
@@ -96,6 +97,7 @@ export function PhotoReportEditor({
   const [generating, setGenerating] = useState(false);
   const [genPolling, setGenPolling] = useState(false); // AI再作成の完了待ち（ポーリング）
   const [coverPickerOpen, setCoverPickerOpen] = useState(false); // 表紙選択モーダル
+  const [reorderOpen, setReorderOpen] = useState(false); // 並べ替えモーダル
 
   const setField = useCallback(<K extends keyof PhotoReportSettings>(key: K, value: PhotoReportSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -105,13 +107,14 @@ export function PhotoReportEditor({
     setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
   }, []);
 
-  const move = useCallback((index: number, dir: -1 | 1) => {
+  // 並べ替えモーダルの結果（fileId の新しい並び）を items に反映する。
+  const reorderByFileIds = useCallback((orderedIds: string[]) => {
     setItems((prev) => {
-      const j = index + dir;
-      if (j < 0 || j >= prev.length) return prev;
-      const next = prev.slice();
-      [next[index], next[j]] = [next[j], next[index]];
-      return next;
+      const map = new Map(prev.map((it) => [it.fileId, it]));
+      const next = orderedIds.map((id) => map.get(id)).filter((it): it is EditItem => Boolean(it));
+      // 万一漏れた写真があれば末尾に温存（取りこぼし防止）。
+      for (const it of prev) if (!orderedIds.includes(it.fileId)) next.push(it);
+      return next.length === prev.length ? next : prev;
     });
   }, []);
 
@@ -709,6 +712,15 @@ export function PhotoReportEditor({
         </div>
       ) : null}
 
+      {reorderOpen ? (
+        <PhotoReorderModal
+          items={items.map((it) => ({ fileId: it.fileId, heading: it.heading }))}
+          photoUrl={(id) => photoUrl(id, folderId, token)}
+          onApply={reorderByFileIds}
+          onClose={() => setReorderOpen(false)}
+        />
+      ) : null}
+
       {/* ① 表紙（PDF 1ページ目）＝フォルダの写真から1枚を表紙に選ぶ（後から入替可・AIも選択） */}
       <div className="editor-section no-print">
         <h2 className="editor-section-title">① 表紙（PDF 1ページ目）</h2>
@@ -731,8 +743,19 @@ export function PhotoReportEditor({
         )}
       </div>
 
-      {/* ② 写真（PDF本文・1ページ8枚）＝各写真に見出し・所見・赤丸 */}
-      <h2 className="editor-section-title no-print">② 写真（PDF本文・各写真に見出し／所見／赤丸）</h2>
+      {/* ② 写真（PDF本文・1ページ8枚）＝各写真に見出し・赤丸。並びは「並べ替え」モーダルで俯瞰調整 */}
+      <div className="editor-section-head no-print">
+        <h2 className="editor-section-title">② 写真（PDF本文・各写真に見出し／赤丸）</h2>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => setReorderOpen(true)}
+          disabled={items.length < 2}
+          title="写真の掲載順を一覧で並べ替える"
+        >
+          ↕ 並べ替え
+        </button>
+      </div>
 
       {items.length === 0 ? (
         <p className="notice">このフォルダに写真がありません。</p>
@@ -755,18 +778,6 @@ export function PhotoReportEditor({
                       value={item.annotations}
                       onChange={(next) => patchItem(index, { annotations: next })}
                     />
-                    <div className="slot-buttons no-print">
-                      <button type="button" onClick={() => move(index, -1)} disabled={index === 0}>
-                        ↑ 前へ
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => move(index, 1)}
-                        disabled={index === items.length - 1}
-                      >
-                        ↓ 後へ
-                      </button>
-                    </div>
                     <figcaption className="editor-field no-print">
                       <label htmlFor={`h-${item.fileId}`}>見出し（写真 {index + 1}）</label>
                       <input

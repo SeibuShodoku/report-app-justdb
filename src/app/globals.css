@@ -406,6 +406,90 @@ button.btn-secondary {
   padding: 3px 4px;
 }
 
+/* ② 写真セクションの見出し行（タイトル＋「並べ替え」ボタンを横並び） */
+.editor-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.editor-section-head .editor-section-title {
+  margin: 0;
+}
+.editor-section-head button {
+  width: auto;
+  flex-shrink: 0;
+}
+
+/* 並べ替えモーダル（俯瞰グリッド・長押しドラッグ） */
+.reorder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+  touch-action: pan-y; /* 既定は縦スクロール可。ドラッグ確定で none に切替 */
+}
+.reorder-grid.dragging {
+  touch-action: none;
+}
+.reorder-cell {
+  position: relative;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.reorder-cell img {
+  width: 100%;
+  height: 84px;
+  object-fit: cover;
+  display: block;
+  pointer-events: none; /* 画像のタップは下のセルに通す＋iOSの長押し保存メニュー抑止 */
+}
+.reorder-cell.lifted {
+  opacity: 0.45;
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+.reorder-no {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reorder-updown {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.reorder-updown button {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* 注記テキスト入力モーダルの入力欄 */
+.annot-text-modal input {
+  width: 100%;
+}
+
 /* 設定モーダル */
 .modal-backdrop {
   position: fixed;

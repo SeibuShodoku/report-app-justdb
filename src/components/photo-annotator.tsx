@@ -55,6 +55,10 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Annotation | null>(null);
   const drawing = useRef(false);
+  // 文字ツール：タップ位置を覚えてアプリ内モーダルで入力する（ネイティブ window.prompt は
+  // モバイルで pointerdown 中に開くと閉じても再発火する＝無限に開き直す不具合があるため使わない）。
+  const [textDraft, setTextDraft] = useState<AnnotationPoint | null>(null);
+  const [textValue, setTextValue] = useState("");
 
   // UNDO/REDO 用スナップショット（onChange を起こす確定操作の前後で積む）。
   const [past, setPast] = useState<Annotation[][]>([]);
@@ -114,28 +118,32 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
-      if (tool === "select") return; // 選択は図形側 onClick で処理
+      // 選択は図形側 onClick、文字は svg onClick（モーダル）で処理＝ここでは描画系のみ。
+      if (tool === "select" || tool === "text") return;
       e.preventDefault();
       const p = norm(e.clientX, e.clientY);
-
-      if (tool === "text") {
-        const text = window.prompt("注記テキスト");
-        if (text && text.trim()) {
-          commit([
-            ...value,
-            { id: newId(), type: "text", points: [p], color, text: text.trim().slice(0, 500) }
-          ]);
-        }
-        return;
-      }
-
       svgRef.current?.setPointerCapture(e.pointerId);
       drawing.current = true;
       const type: Annotation["type"] = tool;
       setDraft({ id: newId(), type, points: tool === "freehand" ? [p] : [p, p], color });
     },
-    [tool, norm, value, color, commit]
+    [tool, norm, color]
   );
+
+  // 文字注記を確定（モーダルの「追加」/Enter）。空なら破棄。
+  const commitText = useCallback(() => {
+    const t = textValue.trim();
+    if (textDraft && t) {
+      commit([...value, { id: newId(), type: "text", points: [textDraft], color, text: t.slice(0, 500) }]);
+    }
+    setTextDraft(null);
+    setTextValue("");
+  }, [textDraft, textValue, value, color, commit]);
+
+  const cancelText = useCallback(() => {
+    setTextDraft(null);
+    setTextValue("");
+  }, []);
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
@@ -321,6 +329,12 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
             onPointerUp={finishDraft}
             onPointerCancel={finishDraft}
             onClick={(e) => {
+              if (tool === "text") {
+                // タップ位置を覚えて入力モーダルを開く（クリック完了後に開くのでループしない）。
+                setTextValue("");
+                setTextDraft(norm(e.clientX, e.clientY));
+                return;
+              }
               // 余白クリックで選択解除（図形側は stopPropagation 済み）。
               if (tool === "select" && e.target === svgRef.current) setSelectedId(null);
             }}
@@ -332,6 +346,34 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
           </svg>
         ) : null}
       </div>
+
+      {textDraft ? (
+        <div className="modal-backdrop no-print" onClick={cancelText}>
+          <div className="modal annot-text-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <h2>注記テキスト</h2>
+            <input
+              type="text"
+              autoFocus
+              value={textValue}
+              maxLength={500}
+              placeholder="写真に入れる文字"
+              onChange={(e) => setTextValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitText();
+                if (e.key === "Escape") cancelText();
+              }}
+            />
+            <div className="inline-actions">
+              <button type="button" onClick={commitText} disabled={!textValue.trim()}>
+                追加
+              </button>
+              <button type="button" className="btn-secondary" onClick={cancelText}>
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
