@@ -8,7 +8,7 @@
  * 認可は起動トークン（folderId 一致）。IAP が「誰か」を担保。
  * 仕様: docs/architecture/slack-photo-report-architecture.md §5/§6
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PhotoAnnotator } from "@/components/photo-annotator";
 import { PhotoReorderModal } from "@/components/photo-reorder-modal";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
@@ -121,6 +121,55 @@ export function PhotoReportEditor({
       return next.length === prev.length ? next : prev;
     });
   }, []);
+
+  // 写真アップロード（案件ポータル動線フェーズ1）：その日の写真フォルダへ直接入れ、
+  // 結果を items に追記する（リロードしない＝編集中の見出し等を失わない）。
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const uploadPhotos = useCallback(
+    async (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+      const list = Array.from(files);
+      setUploading(true);
+      setMessage(null);
+      try {
+        const fd = new FormData();
+        for (const f of list) fd.append("file", f);
+        const res = await fetch(
+          `/api/photo-report/upload?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+          { method: "POST", body: fd }
+        );
+        const json = await res.json();
+        const up = (json?.uploaded ?? []) as Array<{ id: string; name: string }>;
+        // 成功分（部分成功含む）を末尾に追記。並び＝送信順なので list[i] と対応。
+        if (up.length > 0) {
+          setItems((prev) => [
+            ...prev,
+            ...up.map((u, i) => ({
+              fileId: u.id,
+              name: u.name,
+              mimeType: list[i]?.type ?? "image/jpeg",
+              heading: "",
+              annotationNote: "",
+              annotations: [] as Annotation[]
+            }))
+          ]);
+        }
+        if (!res.ok) throw new Error(json?.error ?? `アップロードに失敗（${res.status}）`);
+        setMessage({
+          type: "success",
+          text: `${up.length}枚アップロードしました。並べ替え・見出し付けができます（「報告書保存」で新版になります）。`
+        });
+      } catch (e) {
+        setMessage({ type: "error", text: e instanceof Error ? e.message : "アップロードに失敗しました。" });
+      } finally {
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = ""; // 同じ写真を選び直せるように
+      }
+    },
+    [folderId, token]
+  );
 
   const buildReport = useCallback(
     () => ({
@@ -747,22 +796,60 @@ export function PhotoReportEditor({
         )}
       </div>
 
+      {/* 写真アップロード用の隠し入力（カメラ/複数選択）。トリガーは空状態と見出し横のボタン。 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => void uploadPhotos(e.target.files)}
+      />
+
       {/* ② 写真（PDF本文・1ページ8枚）＝各写真に見出し・赤丸。並びは「並べ替え」モーダルで俯瞰調整 */}
       <div className="editor-section-head no-print">
         <h2 className="editor-section-title">② 写真（PDF本文・各写真に見出し／赤丸）</h2>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => setReorderOpen(true)}
-          disabled={items.length < 2}
-          title="写真の掲載順を一覧で並べ替える"
-        >
-          ↕ 並べ替え
-        </button>
+        <div className="editor-section-head-actions">
+          {items.length > 0 ? (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              title="この報告書フォルダに写真を追加アップロードする"
+            >
+              {uploading ? "アップロード中…" : "＋ 写真を追加"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setReorderOpen(true)}
+            disabled={items.length < 2}
+            title="写真の掲載順を一覧で並べ替える"
+          >
+            ↕ 並べ替え
+          </button>
+        </div>
       </div>
 
       {items.length === 0 ? (
-        <p className="notice">このフォルダに写真がありません。</p>
+        <div className="editor-section upload-empty no-print">
+          <p className="editor-hint">
+            この報告書フォルダにはまだ写真がありません。現場写真をアップロードすると、ここに並んで編集できます。
+          </p>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? "アップロード中…" : "📷 写真をアップロード"}
+          </button>
+          <p className="editor-hint">
+            スマホのカメラ／写真から複数選べます。アップロード後に「AIで作成」で下書きできます。
+          </p>
+        </div>
       ) : (
         <div className="photo-grid tmpl-grid-8">
           {photoPages.map((pageItems, pageIndex) => (

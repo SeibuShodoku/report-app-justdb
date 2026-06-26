@@ -126,6 +126,40 @@ export async function upsertTextFile(
   return ((await res.json()) as { id: string }).id;
 }
 
+/**
+ * 画像（バイナリ）をフォルダへ新規アップロードする。fileId/name を返す。
+ * 写真報告のフェーズ1＝WEBから現場写真をその日の写真フォルダへ直接入れる導線で使う
+ *（「先にDriveへ入れておく」前提を消す・正本アーキ §6/案件ポータル動線）。
+ * バイナリ部はBufferを連結して multipart 本文を組む（テキスト版と違い文字列連結では壊れるため）。
+ */
+export async function uploadImageFile(
+  folderId: string,
+  name: string,
+  mimeType: string,
+  data: Buffer
+): Promise<{ id: string; name: string }> {
+  const token = await getWriteToken();
+  const boundary = "b" + Date.now() + Math.random().toString(36).slice(2, 8);
+  const meta = JSON.stringify({ name, parents: [folderId] });
+  const pre = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
+      `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+    "utf-8"
+  );
+  const post = Buffer.from(`\r\n--${boundary}--`, "utf-8");
+  const body = Buffer.concat([pre, data, post]);
+  const res = await fetch(
+    `${UPLOAD_API}/files?uploadType=multipart&fields=id,name&supportsAllDrives=true`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+      body
+    }
+  );
+  if (!res.ok) throw new Error(`Drive 画像アップロード ${res.status}: ${await res.text()}`);
+  return (await res.json()) as { id: string; name: string };
+}
+
 /** フォルダ内のテキストファイルを name で読む。無ければ null。 */
 export async function readTextFileByName(folderId: string, name: string): Promise<string | null> {
   const token = await getWriteToken();

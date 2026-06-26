@@ -422,6 +422,28 @@ button.btn-secondary {
   width: auto;
   flex-shrink: 0;
 }
+.editor-section-head-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* 写真ゼロ状態のアップローダ（案件ポータル動線フェーズ1） */
+.upload-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 28px 16px;
+  border-style: dashed;
+}
+.upload-empty .editor-hint {
+  max-width: 28rem;
+}
+.upload-empty button {
+  width: auto;
+}
 
 /* 並べ替えモーダル（俯瞰グリッド・長押しドラッグ） */
 .reorder-scroll {
