@@ -142,9 +142,10 @@ button:disabled {
 
 .photo-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 8%; /* 各列≈45%幅＋間を余白に（端末非依存の2列割付） */
-  row-gap: 14px;
+  /* 横幅の固定を解除＝1列（全幅）。写真は列幅なり・本来の縦横比で表示（診断・要望対応）。
+     ※2列に戻す場合は grid-template-columns: repeat(2, minmax(0,1fr)) に戻す。 */
+  grid-template-columns: 1fr;
+  gap: 14px;
 }
 
 .photo-card {
