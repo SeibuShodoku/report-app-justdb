@@ -107,6 +107,7 @@ export function PhotoReportEditor({
   const [coverPickerOpen, setCoverPickerOpen] = useState(false); // 表紙選択モーダル
   const [reorderOpen, setReorderOpen] = useState(false); // 並べ替えモーダル
   const [photosOpen, setPhotosOpen] = useState(false); // 「写真」＝除外中の写真を報告書に戻す画面
+  const [menuOpen, setMenuOpen] = useState(false); // ☰ メニュー（上部ボタンを全部しまう別窓）
   // まとめ文章の別窓編集（インラインだと狭くて見づらいため、タップで広いモーダルで編集）
   const [summaryEdit, setSummaryEdit] = useState<null | "headerSummary" | "workItems">(null);
   const [summaryDraft, setSummaryDraft] = useState("");
@@ -114,7 +115,9 @@ export function PhotoReportEditor({
   const [reportExists, setReportExists] = useState<boolean>(hasReport ?? false);
 
   // モーダル表示中は背景(編集画面)のスクロール/プル更新を凍結。並べ替えは自前で凍結するため除く。
-  useBodyScrollLock(settingsOpen || versionsOpen || coverPickerOpen || photosOpen || summaryEdit !== null);
+  useBodyScrollLock(
+    settingsOpen || versionsOpen || coverPickerOpen || photosOpen || menuOpen || summaryEdit !== null
+  );
 
   // まとめ文章を別窓で開く／閉じる（閉じる時に下書きを反映＝手戻りしない）。
   // onFocus ではなく onClick で開く（フォーカス復帰で無限に開き直す不具合を避ける）。
@@ -660,57 +663,108 @@ export function PhotoReportEditor({
     <section className="panel">
       <div className="editor-topbar no-print">
         <h1>写真報告書</h1>
-        <button type="button" className="btn-util" onClick={toggleVersions}>
-          {versionsOpen ? "管理を閉じる" : "管理"}
-        </button>
-        <button type="button" className="btn-util" onClick={() => setSettingsOpen(true)}>
-          ⚙️ 設定
-        </button>
         <button
           type="button"
-          className="btn-util"
-          onClick={() => setPhotosOpen(true)}
-          title="報告書に載せていない（除外中の）写真を確認・載せ直す"
+          className="btn-util editor-menu-btn"
+          onClick={() => setMenuOpen(true)}
+          title="保存・AI・PDF・管理・設定・写真などの操作"
         >
-          🖼 写真{excludedItems.length > 0 ? `（${excludedItems.length}）` : ""}
+          ☰ メニュー
         </button>
       </div>
 
-      <div className="editor-actions no-print">
-        <button type="button" className="btn-primary" onClick={save} disabled={saving || includedItems.length === 0}>
-          {saving ? "保存中…" : "報告書保存"}
-        </button>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={generate}
-          disabled={generating || genPolling || summaryGenerating || summaryPolling}
-        >
-          {generating ? "依頼中…" : reportExists ? "AIで再作成" : "AIで作成"}
-        </button>
-        <button
-          type="button"
-          className="btn-output"
-          onClick={savePdfToDrive}
-          disabled={pdfSaving}
-          title="A4 PDFを生成し、紐付く案件フォルダ（Google Drive）へ保存します（保存済みの現在版が対象）。先に保存してください。"
-        >
-          {pdfSaving ? "PDF作成中…" : "PDF出力（Driveへ保存）"}
-        </button>
-        <button
-          type="button"
-          className="btn-output-soft"
-          onClick={() =>
-            window.open(
-              `/api/photo-report/pdf?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}&inline=1`,
-              "_blank"
-            )
-          }
-          title="生成したA4 PDFをその場で表示（iPhone可）。保存済みの現在版が対象。"
-        >
-          プレビュー
-        </button>
-      </div>
+      {/* ☰ メニュー＝上部の操作ボタンを全部しまう別窓（保存・AI・PDF・管理・設定・写真） */}
+      {menuOpen ? (
+        <div className="modal-backdrop no-print" onClick={() => setMenuOpen(false)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="inline-actions" style={{ justifyContent: "space-between" }}>
+              <h2>メニュー</h2>
+              <button type="button" className="btn-secondary" onClick={() => setMenuOpen(false)}>
+                閉じる
+              </button>
+            </div>
+            <div className="menu-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setMenuOpen(false);
+                  void save();
+                }}
+                disabled={saving || includedItems.length === 0}
+              >
+                {saving ? "保存中…" : "報告書保存"}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setMenuOpen(false);
+                  void generate();
+                }}
+                disabled={generating || genPolling || summaryGenerating || summaryPolling}
+              >
+                {generating ? "依頼中…" : reportExists ? "AIで再作成" : "AIで作成"}
+              </button>
+              <button
+                type="button"
+                className="btn-output"
+                onClick={() => {
+                  setMenuOpen(false);
+                  void savePdfToDrive();
+                }}
+                disabled={pdfSaving}
+              >
+                {pdfSaving ? "PDF作成中…" : "PDF出力（Driveへ保存）"}
+              </button>
+              <button
+                type="button"
+                className="btn-output-soft"
+                onClick={() => {
+                  window.open(
+                    `/api/photo-report/pdf?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}&inline=1`,
+                    "_blank"
+                  );
+                  setMenuOpen(false);
+                }}
+              >
+                プレビュー
+              </button>
+              <hr className="menu-sep" />
+              <button
+                type="button"
+                className="btn-util"
+                onClick={() => {
+                  setMenuOpen(false);
+                  toggleVersions();
+                }}
+              >
+                管理（版履歴）
+              </button>
+              <button
+                type="button"
+                className="btn-util"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSettingsOpen(true);
+                }}
+              >
+                ⚙️ 設定
+              </button>
+              <button
+                type="button"
+                className="btn-util"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setPhotosOpen(true);
+                }}
+              >
+                写真{excludedItems.length > 0 ? `（除外 ${excludedItems.length}）` : ""}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <p className="editor-guide no-print">
         この画面の内容は <b>① 表紙</b> →（<b>② 写真</b>ページ）→ <b>③ まとめ</b> の順で A4 PDF になります。

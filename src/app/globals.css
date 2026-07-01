@@ -615,6 +615,21 @@ button.btn-secondary {
   background: #fff;
 }
 
+/* ☰ メニュー：操作ボタンを縦積みで全部しまう */
+.menu-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+.menu-actions button {
+  width: 100%;
+}
+.menu-sep {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
 /* ===== 見積エディタ（リング2） ===== */
 .estimate-editor {
   display: grid;
@@ -1092,6 +1107,26 @@ button.btn-secondary {
   padding: 3px 8px;
   border-radius: 999px;
   pointer-events: none;
+}
+
+/* 一覧の写真セル：縦横比に依らず高さをそろえる（縦写真で行が縦に伸びない）。
+   wrap を画像にシュリンクラップさせて SVG＝画像ボックスの一致を保つ（重なりが崩れない）。
+   集中モード（.annot--focus）は全画面固定なので除外する。 */
+.photo-card .annot:not(.annot--focus) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.photo-card .annot:not(.annot--focus) .annot-wrap {
+  width: auto;
+  max-width: 100%;
+  max-height: 200px;
+}
+.photo-card .annot:not(.annot--focus) .annot-img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 200px;
 }
 
 @media (max-width: 860px) {

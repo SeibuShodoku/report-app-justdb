@@ -196,6 +196,7 @@ export async function requestGeneration(
     await sbPatch(`photo_report_jobs?id=eq.${existing[0].id}`, {
       status: "queued",
       mode, // 依頼のたびに上書き（full=全生成 / summary=まとめだけ）。生成は folder 単位で1件ずつ。
+      attempts: 0, // 人の明示的な再依頼＝新しい試行。累積カウンタをリセット（MAX_ATTEMPTS で詰まるのを防ぐ）。
       error: null,
       notified_at: null,
       updated_at: new Date().toISOString()
