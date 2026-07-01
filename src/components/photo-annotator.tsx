@@ -578,7 +578,6 @@ export function PhotoAnnotator({
             {draft ? <g>{renderShape(draft, true)}</g> : null}
           </svg>
         ) : null}
-        {idle ? <span className="annot-edit-hint no-print">✏️ タップして注記</span> : null}
       </div>
 
       {textDraft ? (

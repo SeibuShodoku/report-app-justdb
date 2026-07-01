@@ -377,6 +377,51 @@ export function PhotoReportEditor({
     }
   }, [folderId, token]);
 
+  // プレビュー＝「現在の編集」を反映したPDFを開く。サーバーPDFは保存済み現在版を描くので、
+  // 先に保存してからPDFを開く（未編集ならそのまま）。iOSのポップアップ制限回避のため、
+  // クリック起点で空ウィンドウを先に開き、保存完了後にPDFへ遷移させる。
+  const preview = useCallback(async () => {
+    const w = window.open("", "_blank");
+    if (w) {
+      try {
+        w.document.write(
+          "<!doctype html><meta name='viewport' content='width=device-width'>" +
+            "<body style='font-family:sans-serif;padding:24px;color:#333'>PDFを生成中です…</body>"
+        );
+      } catch {
+        /* 一部環境で document.write 不可でも location 遷移で復帰 */
+      }
+    }
+    try {
+      if (dirtyRef.current) {
+        const res = await fetch(
+          `/api/photo-report/save?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ report: buildReport() })
+          }
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error ?? `保存に失敗（${res.status}）`);
+        dirtyRef.current = false;
+        setReportExists(true);
+      }
+      const url = `/api/photo-report/pdf?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}&inline=1`;
+      if (w) w.location.href = url;
+      else window.open(url, "_blank");
+    } catch (e) {
+      if (w) {
+        try {
+          w.close();
+        } catch {
+          /* noop */
+        }
+      }
+      setMessage({ type: "error", text: e instanceof Error ? e.message : "プレビューに失敗しました。" });
+    }
+  }, [folderId, token, buildReport]);
+
   // 「まとめだけAI生成」＝見出しを保存してから summary ジョブを投入し、完了で概要・内容だけ反映。
   const generateSummary = useCallback(async () => {
     const hasHeading = items.some((it) => !it.excluded && it.heading.trim());
@@ -786,14 +831,12 @@ export function PhotoReportEditor({
                 type="button"
                 className="btn-output-soft"
                 onClick={() => {
-                  window.open(
-                    `/api/photo-report/pdf?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}&inline=1`,
-                    "_blank"
-                  );
                   setMenuOpen(false);
+                  void preview();
                 }}
+                title="現在の編集を反映したPDFを開く（未保存なら保存してから表示）"
               >
-                プレビュー
+                プレビュー（現在の内容）
               </button>
               <hr className="menu-sep" />
               <button
