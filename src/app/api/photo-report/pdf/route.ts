@@ -1,3 +1,4 @@
+import { driveWriteConfigured, upsertBinaryFile } from "@/lib/drive-write";
 import { authorizeFolderAccess } from "@/lib/security/proxy-auth";
 
 export const runtime = "nodejs";
@@ -98,13 +99,27 @@ async function handle(request: Request): Promise<Response> {
       printBackground: true,
       preferCSSPageSize: true // globals.css の @page size:A4 / margin を尊重
     });
+    await browser.close().catch(() => undefined);
+    browser = null; // Drive アップロード前に Chromium を閉じてメモリを解放
 
+    // save=1 ＝紐付く案件フォルダへ PDF を保存（同名 upsert＝毎回最新1つ）。それ以外は PDF を返す。
+    if (params.get("save") === "1") {
+      if (!driveWriteConfigured()) {
+        return Response.json({ error: "Drive書込未設定のため保存できません。" }, { status: 503 });
+      }
+      const name = "写真報告書.pdf";
+      await upsertBinaryFile(folderId, name, "application/pdf", Buffer.from(pdf));
+      return Response.json({ ok: true, savedToDrive: true, name });
+    }
+
+    // inline=1 ＝ブラウザ内で表示（iPhone のプレビュー用。既定は attachment＝ダウンロード）。
+    const disposition = params.get("inline") === "1" ? "inline" : "attachment";
     const filename = `写真報告書-${folderId}.pdf`;
     return new Response(Buffer.from(pdf), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(filename)}`,
         "Cache-Control": "no-store"
       }
     });

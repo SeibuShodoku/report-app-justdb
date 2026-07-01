@@ -45,9 +45,11 @@ type Props = {
   alt: string;
   value: Annotation[];
   onChange: (next: Annotation[]) => void;
+  // 一覧では道具を隠して写真だけ表示し、タップで集中モードに入る（グリッドの脱・ボタン化）。
+  compact?: boolean;
 };
 
-export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
+export function PhotoAnnotator({ src, alt, value, onChange, compact }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
@@ -430,10 +432,13 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
   }
 
   const ready = box.w > 0 && box.h > 0;
+  // idle＝一覧の縮小表示（道具を隠し、注記は見せるだけ・タップで集中モードへ）。
+  const idle = !!compact && !focused;
 
   return (
     <div className={`annot${focused ? " annot--focus" : ""}`}>
       {focused ? <div className="annot-focus-backdrop no-print" onClick={exitFocus} /> : null}
+      {idle ? null : (
       <div className="annot-toolbar no-print">
         {TOOLS.map((t) => (
           <button
@@ -484,8 +489,14 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
           </button>
         ) : null}
       </div>
+      )}
 
-      <div className="annot-wrap" ref={wrapRef}>
+      <div
+        className="annot-wrap"
+        ref={wrapRef}
+        onClick={idle ? () => setFocused(true) : undefined}
+        style={idle ? { cursor: "pointer" } : undefined}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="annot-img" src={src} alt={alt} draggable={false} />
         {ready ? (
@@ -494,38 +505,55 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
             className="annot-svg"
             viewBox={`0 0 ${box.w} ${box.h}`}
             preserveAspectRatio="none"
-            style={{ touchAction: "none", cursor: tool === "select" ? "default" : "crosshair" }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={() => {
-              finishDraft();
-              endDrag();
+            style={{
+              touchAction: "none",
+              pointerEvents: idle ? "none" : "auto", // 一覧では注記は「見せるだけ」＝タップは背面の写真へ
+              cursor: idle ? "pointer" : tool === "select" ? "default" : "crosshair"
             }}
-            onPointerCancel={() => {
-              finishDraft();
-              endDrag();
-            }}
-            onClick={(e) => {
-              if (tool === "text") {
-                // タップ位置を覚えて入力モーダルを開く（クリック完了後に開くのでループしない）。
-                setTextValue("");
-                setTextDraft(norm(e.clientX, e.clientY));
-                return;
-              }
-              // 余白クリックで選択解除（図形側は stopPropagation 済み）。
-              if (tool === "select" && e.target === svgRef.current) setSelectedId(null);
-            }}
+            onPointerDown={idle ? undefined : onPointerDown}
+            onPointerMove={idle ? undefined : onPointerMove}
+            onPointerUp={
+              idle
+                ? undefined
+                : () => {
+                    finishDraft();
+                    endDrag();
+                  }
+            }
+            onPointerCancel={
+              idle
+                ? undefined
+                : () => {
+                    finishDraft();
+                    endDrag();
+                  }
+            }
+            onClick={
+              idle
+                ? undefined
+                : (e) => {
+                    if (tool === "text") {
+                      // タップ位置を覚えて入力モーダルを開く（クリック完了後に開くのでループしない）。
+                      setTextValue("");
+                      setTextDraft(norm(e.clientX, e.clientY));
+                      return;
+                    }
+                    // 余白クリックで選択解除（図形側は stopPropagation 済み）。
+                    if (tool === "select" && e.target === svgRef.current) setSelectedId(null);
+                  }
+            }
           >
             {value.map((a) => (
               <g key={a.id}>
-                {a.id === selectedId ? renderSelectionFrame(a) : null}
+                {!idle && a.id === selectedId ? renderSelectionFrame(a) : null}
                 {renderShape(a, false)}
-                {a.id === selectedId ? renderHandles(a) : null}
+                {!idle && a.id === selectedId ? renderHandles(a) : null}
               </g>
             ))}
             {draft ? <g>{renderShape(draft, true)}</g> : null}
           </svg>
         ) : null}
+        {idle ? <span className="annot-edit-hint no-print">✏️ タップして注記</span> : null}
       </div>
 
       {textDraft ? (

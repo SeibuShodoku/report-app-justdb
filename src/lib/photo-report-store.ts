@@ -212,12 +212,14 @@ export async function requestGeneration(
   return { requeued: false };
 }
 
-/** WEB「AIで再作成」の完了監視用：folder の最新ジョブ状態を返す（queued|processing|done|error|null）。 */
-export async function getGenerationStatus(folderId: string): Promise<{ status: string | null }> {
-  const rows = await sbSelect<{ status: string }>(
-    `photo_report_jobs?folder_id=eq.${encodeURIComponent(folderId)}&select=status&order=id.desc&limit=1`
+/** WEB「AIで再作成」の完了監視用：folder の最新ジョブ状態＋実エラーを返す。 */
+export async function getGenerationStatus(
+  folderId: string
+): Promise<{ status: string | null; error?: string | null }> {
+  const rows = await sbSelect<{ status: string; error: string | null }>(
+    `photo_report_jobs?folder_id=eq.${encodeURIComponent(folderId)}&select=status,error&order=id.desc&limit=1`
   );
-  return { status: rows[0]?.status ?? null };
+  return { status: rows[0]?.status ?? null, error: rows[0]?.error ?? null };
 }
 
 /** 現在版 report の「概要・内容」だけを返す（まとめだけAI生成の完了反映用＝ページ全体を再読込せずに済む）。 */

@@ -160,6 +160,45 @@ export async function uploadImageFile(
   return (await res.json()) as { id: string; name: string };
 }
 
+/**
+ * バイナリ（PDF等）をフォルダへ name で upsert（あれば内容更新・無ければ作成）。fileId を返す。
+ * PDF出力を案件フォルダへ保存する導線で使う。バイナリは Buffer 連結で multipart 本文を組む。
+ */
+export async function upsertBinaryFile(
+  folderId: string,
+  name: string,
+  mimeType: string,
+  data: Buffer
+): Promise<string> {
+  const token = await getWriteToken();
+  const existing = await findChildByName(folderId, name);
+  if (existing) {
+    const res = await fetch(`${UPLOAD_API}/files/${existing}?uploadType=media&supportsAllDrives=true`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": mimeType },
+      body: data
+    });
+    if (!res.ok) throw new Error(`Drive 内容更新(bin) ${res.status}: ${await res.text()}`);
+    return existing;
+  }
+  const boundary = "b" + Date.now() + Math.random().toString(36).slice(2, 8);
+  const meta = JSON.stringify({ name, parents: [folderId] });
+  const pre = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
+      `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+    "utf-8"
+  );
+  const post = Buffer.from(`\r\n--${boundary}--`, "utf-8");
+  const body = Buffer.concat([pre, data, post]);
+  const res = await fetch(`${UPLOAD_API}/files?uploadType=multipart&fields=id&supportsAllDrives=true`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body
+  });
+  if (!res.ok) throw new Error(`Drive バイナリ作成 ${res.status}: ${await res.text()}`);
+  return ((await res.json()) as { id: string }).id;
+}
+
 /** フォルダ内のテキストファイルを name で読む。無ければ null。 */
 export async function readTextFileByName(folderId: string, name: string): Promise<string | null> {
   const token = await getWriteToken();

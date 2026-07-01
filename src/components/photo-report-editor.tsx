@@ -103,8 +103,10 @@ export function PhotoReportEditor({
   const [genPolling, setGenPolling] = useState(false); // AI再作成の完了待ち（ポーリング）
   const [summaryGenerating, setSummaryGenerating] = useState(false); // まとめだけAI 依頼中
   const [summaryPolling, setSummaryPolling] = useState(false); // まとめだけAI 完了待ち
+  const [pdfSaving, setPdfSaving] = useState(false); // PDFをDriveへ保存中
   const [coverPickerOpen, setCoverPickerOpen] = useState(false); // 表紙選択モーダル
   const [reorderOpen, setReorderOpen] = useState(false); // 並べ替えモーダル
+  const [photosOpen, setPhotosOpen] = useState(false); // 「写真」＝除外中の写真を報告書に戻す画面
   // まとめ文章の別窓編集（インラインだと狭くて見づらいため、タップで広いモーダルで編集）
   const [summaryEdit, setSummaryEdit] = useState<null | "headerSummary" | "workItems">(null);
   const [summaryDraft, setSummaryDraft] = useState("");
@@ -112,7 +114,7 @@ export function PhotoReportEditor({
   const [reportExists, setReportExists] = useState<boolean>(hasReport ?? false);
 
   // モーダル表示中は背景(編集画面)のスクロール/プル更新を凍結。並べ替えは自前で凍結するため除く。
-  useBodyScrollLock(settingsOpen || versionsOpen || coverPickerOpen || summaryEdit !== null);
+  useBodyScrollLock(settingsOpen || versionsOpen || coverPickerOpen || photosOpen || summaryEdit !== null);
 
   // まとめ文章を別窓で開く／閉じる（閉じる時に下書きを反映＝手戻りしない）。
   // onFocus ではなく onClick で開く（フォーカス復帰で無限に開き直す不具合を避ける）。
@@ -304,6 +306,31 @@ export function PhotoReportEditor({
     }
   }, [folderId, token, reportExists]);
 
+  // PDF出力＝サーバーPDFを生成し、紐付く案件フォルダ（Drive）へ保存する（同名 upsert＝最新1つ）。
+  const savePdfToDrive = useCallback(async () => {
+    setPdfSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/photo-report/pdf?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}&save=1`,
+        { method: "POST" }
+      );
+      const ctype = res.headers.get("content-type") ?? "";
+      const json = ctype.includes("application/json") ? await res.json() : null;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error ?? `PDFの保存に失敗しました（${res.status}）`);
+      }
+      setMessage({
+        type: "success",
+        text: `✅ 案件フォルダに「${json.name ?? "写真報告書.pdf"}」を保存しました（「プレビュー」で確認できます）。`
+      });
+    } catch (e) {
+      setMessage({ type: "error", text: e instanceof Error ? e.message : "PDFの保存に失敗しました。" });
+    } finally {
+      setPdfSaving(false);
+    }
+  }, [folderId, token]);
+
   // 「まとめだけAI生成」＝見出しを保存してから summary ジョブを投入し、完了で概要・内容だけ反映。
   const generateSummary = useCallback(async () => {
     const hasHeading = items.some((it) => !it.excluded && it.heading.trim());
@@ -393,7 +420,10 @@ export function PhotoReportEditor({
         if (res.ok && json.status === "error") {
           stop = true;
           setSummaryPolling(false);
-          setMessage({ type: "error", text: "まとめの生成に失敗しました。少し待って再度お試しください。" });
+          setMessage({
+            type: "error",
+            text: `まとめの生成に失敗しました：${json.error ?? "詳細不明（少し待って再度お試しください）"}`
+          });
           return;
         }
       } catch {
@@ -443,7 +473,10 @@ export function PhotoReportEditor({
         if (res.ok && json.status === "error") {
           stop = true;
           setGenPolling(false);
-          setMessage({ type: "error", text: "AI生成に失敗しました。設定を見直してもう一度お試しください。" });
+          setMessage({
+            type: "error",
+            text: `AI生成に失敗しました：${json.error ?? "設定を見直してもう一度お試しください。"}`
+          });
           return;
         }
       } catch {
@@ -633,6 +666,14 @@ export function PhotoReportEditor({
         <button type="button" className="btn-util" onClick={() => setSettingsOpen(true)}>
           ⚙️ 設定
         </button>
+        <button
+          type="button"
+          className="btn-util"
+          onClick={() => setPhotosOpen(true)}
+          title="報告書に載せていない（除外中の）写真を確認・載せ直す"
+        >
+          🖼 写真{excludedItems.length > 0 ? `（${excludedItems.length}）` : ""}
+        </button>
       </div>
 
       <div className="editor-actions no-print">
@@ -650,24 +691,30 @@ export function PhotoReportEditor({
         <button
           type="button"
           className="btn-output"
+          onClick={savePdfToDrive}
+          disabled={pdfSaving}
+          title="A4 PDFを生成し、紐付く案件フォルダ（Google Drive）へ保存します（保存済みの現在版が対象）。先に保存してください。"
+        >
+          {pdfSaving ? "PDF作成中…" : "PDF出力（Driveへ保存）"}
+        </button>
+        <button
+          type="button"
+          className="btn-output-soft"
           onClick={() =>
             window.open(
-              `/api/photo-report/pdf?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+              `/api/photo-report/pdf?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}&inline=1`,
               "_blank"
             )
           }
-          title="サーバー側で決定的なA4 PDFを生成（保存済みの現在版が対象）。先に保存してください。"
+          title="生成したA4 PDFをその場で表示（iPhone可）。保存済みの現在版が対象。"
         >
-          PDF出力
-        </button>
-        <button type="button" className="btn-output-soft" onClick={() => window.print()}>
           プレビュー
         </button>
       </div>
 
       <p className="editor-guide no-print">
         この画面の内容は <b>① 表紙</b> →（<b>② 写真</b>ページ）→ <b>③ まとめ</b> の順で A4 PDF になります。
-        仕上げたら「報告書保存」→「PDF出力」で A4 PDF を出します（その場で見るだけなら「プレビュー」）。
+        仕上げたら「報告書保存」→「PDF出力（Driveへ保存）」で案件フォルダにPDFを保存します（その場で確認は「プレビュー」＝iPhoneでも見られます）。
       </p>
 
       {settingsOpen ? (
@@ -948,6 +995,42 @@ export function PhotoReportEditor({
         />
       ) : null}
 
+      {/* 「写真」＝報告書に載せていない（除外中の）写真を確認し、載せ直す画面 */}
+      {photosOpen ? (
+        <div className="modal-backdrop no-print" onClick={() => setPhotosOpen(false)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="inline-actions" style={{ justifyContent: "space-between" }}>
+              <h2>報告書に載せていない写真（{excludedItems.length}）</h2>
+              <button type="button" className="btn-secondary" onClick={() => setPhotosOpen(false)}>
+                閉じる
+              </button>
+            </div>
+            <p className="notice">
+              「報告書に載せない」にした写真です（Drive には残っています）。本文・表紙・AIの対象から外れています。「報告書に載せる」で戻せます。
+            </p>
+            {excludedItems.length === 0 ? (
+              <p className="notice">除外中の写真はありません。</p>
+            ) : (
+              <div className="excluded-grid">
+                {excludedItems.map((item) => (
+                  <figure key={item.fileId} className="excluded-cell">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photoUrl(item.fileId, folderId, token)} alt={item.heading || item.name} />
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => patchItemById(item.fileId, { excluded: false })}
+                    >
+                      報告書に載せる
+                    </button>
+                  </figure>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       {/* ① 表紙（PDF 1ページ目）＝フォルダの写真から1枚を表紙に選ぶ（後から入替可・AIも選択） */}
       <div className="editor-section no-print">
         <h2 className="editor-section-title">① 表紙（PDF 1ページ目）</h2>
@@ -1052,6 +1135,7 @@ export function PhotoReportEditor({
                       alt={item.heading || item.name}
                       value={item.annotations}
                       onChange={(next) => patchItemById(item.fileId, { annotations: next })}
+                      compact
                     />
                     <figcaption className="editor-field no-print">
                       <label htmlFor={`h-${item.fileId}`}>見出し（写真 {index + 1}）</label>
@@ -1075,31 +1159,6 @@ export function PhotoReportEditor({
           ))}
         </div>
       )}
-
-      {/* 報告書に「載せない」写真のトレイ（画面のみ）。実体は Drive に残り、いつでも載せ直せる。 */}
-      {excludedItems.length > 0 ? (
-        <div className="editor-section excluded-tray no-print">
-          <h2 className="editor-section-title">報告書に載せない写真（{excludedItems.length}枚）</h2>
-          <p className="editor-hint">
-            これらは本文・表紙・AIの対象から外れます（Drive には残っています）。「載せる」で戻せます。
-          </p>
-          <div className="excluded-grid">
-            {excludedItems.map((item) => (
-              <figure key={item.fileId} className="excluded-cell">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photoUrl(item.fileId, folderId, token)} alt={item.heading || item.name} />
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => patchItemById(item.fileId, { excluded: false })}
-                >
-                  報告書に載せる
-                </button>
-              </figure>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       {/* ③ まとめ（PDFの最終ページ＝概要・内容・免責）。画面でここを編集すると下のPDF体裁に出る */}
       <div className="editor-section no-print">
