@@ -126,6 +126,42 @@ export function PhotoReportEditor({
       summaryEdit !== null
   );
 
+  // 未保存の編集があるか（戻る/リロード/離脱の誤操作で内容を失わないためのガード）。
+  const dirtyRef = useRef(false);
+  const dirtyInit = useRef(false);
+  useEffect(() => {
+    if (!dirtyInit.current) {
+      dirtyInit.current = true; // 初回レンダーは編集ではない
+      return;
+    }
+    dirtyRef.current = true;
+  }, [items, headerSummary, workItemsText, coverFileId]);
+
+  // 「戻る」誤操作ガード：iOSの戻るスワイプ等でうっかり離脱→編集消失を防ぐ。
+  // 履歴にダミーを積んで popstate を捕捉し、未保存なら確認（＋beforeunloadでリロード/クローズも警告）。
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!dirtyRef.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.history.pushState(null, "");
+    const onPop = () => {
+      if (dirtyRef.current && !window.confirm("編集内容が未保存です。前の画面に戻りますか？（戻ると失われます）")) {
+        window.history.pushState(null, ""); // 戻るを吸収＝このページに留まる
+        return;
+      }
+      window.removeEventListener("popstate", onPop);
+      window.history.back(); // 離脱を許可＝実際の前ページへ
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("popstate", onPop);
+    };
+  }, []);
+
   // まとめ文章を別窓で開く／閉じる（閉じる時に下書きを反映＝手戻りしない）。
   // onFocus ではなく onClick で開く（フォーカス復帰で無限に開き直す不具合を避ける）。
   const openSummary = useCallback(
@@ -548,6 +584,7 @@ export function PhotoReportEditor({
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? `保存に失敗（${res.status}）`);
+      dirtyRef.current = false; // 保存できたので離脱ガードを解除
       setReportExists(true); // 保存後は報告書が存在＝以降「再作成」表記に
       setMessage({
         type: "success",
@@ -652,18 +689,20 @@ export function PhotoReportEditor({
   const execDate = (settings.execDate ?? "").trim();
   const reporter = (settings.reporter ?? "").trim();
   const workItemsList = workItemsText.split("\n").map((s) => s.trim()).filter(Boolean);
-  // 「載せる」写真だけが本文・表紙・番号の対象。「載せない」写真は下のトレイに分けて載せ直せる。
+  // 「載せる」写真だけが本文・表紙・番号の対象。「載せない」写真は「写真」画面で載せ直せる。
   const includedItems = items.filter((it) => !it.excluded);
   const excludedItems = items.filter((it) => it.excluded);
   const coverItem = includedItems.find((it) => it.fileId === coverFileId) ?? includedItems[0];
+  // 表紙は「独立した1枚」＝本文（②写真）には出さない。表紙で選んだ写真は本文グリッドから除く。
+  const bodyItems = includedItems.filter((it) => it.fileId !== coverItem?.fileId);
 
   // 印刷レイアウト＝テンプレート grid-8（縦4×横2＝8枚/A4ページ）。
-  // 「載せる」写真を 8 枚ずつのページに分割し、各ページを A4 固定で描く（除外写真は本文に出さない）。
+  // 本文写真（表紙を除く「載せる」写真）を 8 枚ずつのページに分割し、各ページを A4 固定で描く。
   // 将来テンプレート（例 detail-3）を足すときは PHOTOS_PER_PAGE とクラスを切り替える。
   const PHOTOS_PER_PAGE = 8;
   const photoPages: EditItem[][] = [];
-  for (let i = 0; i < includedItems.length; i += PHOTOS_PER_PAGE) {
-    photoPages.push(includedItems.slice(i, i + PHOTOS_PER_PAGE));
+  for (let i = 0; i < bodyItems.length; i += PHOTOS_PER_PAGE) {
+    photoPages.push(bodyItems.slice(i, i + PHOTOS_PER_PAGE));
   }
 
   return (
@@ -1076,7 +1115,7 @@ export function PhotoReportEditor({
 
       {reorderOpen ? (
         <PhotoReorderModal
-          items={includedItems.map((it) => ({ fileId: it.fileId, heading: it.heading }))}
+          items={bodyItems.map((it) => ({ fileId: it.fileId, heading: it.heading }))}
           photoUrl={(id) => photoUrl(id, folderId, token)}
           onApply={reorderByFileIds}
           onClose={() => setReorderOpen(false)}
@@ -1177,7 +1216,7 @@ export function PhotoReportEditor({
             type="button"
             className="btn-secondary"
             onClick={() => setReorderOpen(true)}
-            disabled={includedItems.length < 2}
+            disabled={bodyItems.length < 2}
             title="写真の掲載順を一覧で並べ替える"
           >
             ↕ 並べ替え
@@ -1208,44 +1247,34 @@ export function PhotoReportEditor({
             <div className="photo-page" key={pageIndex}>
               {pageItems.map((item, j) => {
                 const index = pageIndex * PHOTOS_PER_PAGE + j;
-                const isCover = item.fileId === coverFileId;
                 return (
                   <figure key={item.fileId} className="photo-card">
                     <div className="print-only print-caption">
                       {index + 1}．{item.heading || `写真 ${index + 1}`}
-                    </div>
-                    <div className="photo-card-badges no-print">
-                      {isCover ? <div className="cover-badge">★ 表紙にも使われています</div> : null}
-                      <button
-                        type="button"
-                        className="btn-exclude"
-                        title="この写真を報告書に載せない（Drive には残ります・あとで載せ直せます）"
-                        onClick={() => patchItemById(item.fileId, { excluded: true })}
-                      >
-                        報告書に載せない
-                      </button>
                     </div>
                     <PhotoAnnotator
                       src={photoUrl(item.fileId, folderId, token)}
                       alt={item.heading || item.name}
                       value={item.annotations}
                       onChange={(next) => patchItemById(item.fileId, { annotations: next })}
+                      heading={item.heading}
+                      onHeadingChange={(v) => patchItemById(item.fileId, { heading: v })}
+                      headingPlaceholder={`写真 ${index + 1}`}
                       compact
                     />
-                    <figcaption className="editor-field no-print">
-                      <label htmlFor={`h-${item.fileId}`}>見出し（写真 {index + 1}）</label>
-                      <input
-                        id={`h-${item.fileId}`}
-                        type="text"
-                        value={item.heading}
-                        maxLength={80}
-                        placeholder={`写真 ${index + 1}`}
-                        onChange={(e) => patchItemById(item.fileId, { heading: e.target.value })}
-                      />
-                      {/* 所見は grid-8 PDF に出ないため一旦非表示（detail-3 等のカット追加時に再表示）。データ(annotationNote)は保持。 */}
-                      {item.annotations.length > 0 ? (
-                        <p className="notice no-print">図形 {item.annotations.length} 件（保存に含まれます）</p>
-                      ) : null}
+                    {/* 一覧側の見出しは小さく（編集は写真タップ→拡大窓の中で）。 */}
+                    <figcaption className="photo-card-caption no-print">
+                      <span className="photo-card-heading">
+                        {index + 1}．{item.heading || `写真 ${index + 1}`}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-exclude"
+                        title="この写真を報告書に載せない（Drive には残ります・あとで載せ直せます）"
+                        onClick={() => patchItemById(item.fileId, { excluded: true })}
+                      >
+                        載せない
+                      </button>
                     </figcaption>
                   </figure>
                 );

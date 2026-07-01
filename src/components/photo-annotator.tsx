@@ -47,9 +47,22 @@ type Props = {
   onChange: (next: Annotation[]) => void;
   // 一覧では道具を隠して写真だけ表示し、タップで集中モードに入る（グリッドの脱・ボタン化）。
   compact?: boolean;
+  // 見出しを集中モード（拡大窓）の中で編集する（一覧側は小さく表示）。
+  heading?: string;
+  onHeadingChange?: (v: string) => void;
+  headingPlaceholder?: string;
 };
 
-export function PhotoAnnotator({ src, alt, value, onChange, compact }: Props) {
+export function PhotoAnnotator({
+  src,
+  alt,
+  value,
+  onChange,
+  compact,
+  heading,
+  onHeadingChange,
+  headingPlaceholder
+}: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
@@ -490,6 +503,18 @@ export function PhotoAnnotator({ src, alt, value, onChange, compact }: Props) {
         ) : null}
       </div>
       )}
+
+      {focused && onHeadingChange ? (
+        <input
+          className="annot-heading-input no-print"
+          type="text"
+          value={heading ?? ""}
+          maxLength={80}
+          placeholder={headingPlaceholder ?? "見出し"}
+          onChange={(e) => onHeadingChange(e.target.value)}
+          aria-label="見出し"
+        />
+      ) : null}
 
       <div
         className="annot-wrap"

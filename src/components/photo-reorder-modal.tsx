@@ -154,7 +154,12 @@ export function PhotoReorderModal({ items, photoUrl, onApply, onClose }: Props) 
   return (
     <div className="modal-backdrop no-print" onClick={apply}>
       <div className="modal reorder-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h2>写真の並べ替え</h2>
+        <div className="inline-actions" style={{ justifyContent: "space-between" }}>
+          <h2>写真の並べ替え</h2>
+          <button type="button" className="btn-secondary" onClick={apply}>
+            閉じる
+          </button>
+        </div>
         <p className="notice">
           A4の1ページ＝<b>横2×縦4＝8枚</b>の割り付けで表示します（PDFと同じ並び・端末で崩れません）。
           写真を<b>長押ししてからドラッグ</b>で移動（スマホは指で長押し→移動）。一覧は指でスクロール、右上の <b>↑ / ↓</b> でも1つずつ動かせます。

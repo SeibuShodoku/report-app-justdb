@@ -1116,6 +1116,35 @@ button.btn-secondary {
   font-weight: 800;
 }
 
+/* 集中モード内の見出し入力（拡大窓の中で見出しを編集） */
+.annot--focus .annot-heading-input {
+  position: relative;
+  z-index: 1;
+  width: min(96vw, 560px);
+  padding: 8px 10px;
+  font-size: 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* 一覧の見出し（小さく・全部見えるように）＋「載せない」小ボタン */
+.photo-card-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.photo-card-heading {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 /* 一覧（compact）で「タップして注記」を促す小さなヒント（写真右下） */
 .annot-edit-hint {
   position: absolute;
@@ -1151,10 +1180,7 @@ button.btn-secondary {
 }
 
 @media (max-width: 860px) {
-  .photo-grid {
-    grid-template-columns: 1fr;
-  }
-
+  /* 写真グリッドはスマホでも横2枚固定（A4の8枚カット準拠・端末で崩れない）。 */
   .slot-buttons {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
