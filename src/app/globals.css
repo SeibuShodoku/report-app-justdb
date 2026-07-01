@@ -157,6 +157,7 @@ button:disabled {
 }
 
 .photo-card {
+  margin: 0; /* figure 既定の左右40pxマージンを消す（これが写真を痩せさせていた真犯人） */
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0; /* 写真をカード（列）幅いっぱいに敷く */
