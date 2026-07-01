@@ -31,11 +31,12 @@ main {
 }
 
 .panel {
+  --pp: 24px; /* パネル左右padding。写真グリッドはこの分だけ外へ広げて“ふち”まで使う。 */
   width: min(980px, 100%);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 24px;
+  padding: var(--pp);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
 }
 
@@ -148,9 +149,11 @@ button:disabled {
   display: grid;
   /* 2列。すき間は最小限にして、できるだけ幅を写真に割り当てる（端末幅なりに2枚が広がる）。 */
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 6px;
+  column-gap: 4px;
   row-gap: 14px;
   align-items: start; /* 各カードは中身なりの高さ（短い写真の下に余白を作らない） */
+  /* パネルの左右padding分だけ外へ広げ、写真を“ふち”まで使う（固定余白で写真が痩せるのを防ぐ）。 */
+  margin-inline: calc(-1 * var(--pp, 24px));
 }
 
 .photo-card {
@@ -1040,10 +1043,10 @@ button.btn-secondary {
 /* モバイル：1カラムに畳んで右端の見切れを防ぐ */
 @media (max-width: 640px) {
   main {
-    padding: 6px;
+    padding: 4px;
   }
   .panel {
-    padding: 10px;
+    --pp: 8px; /* padding は var(--pp)。写真グリッドは -8px で外へ広がる */
   }
   /* 表紙グリッドと薬剤行は幅が要るので1カラムに畳む。横並びペア(est-row-2/3)はモバイルでも横並び維持。 */
   .est-grid,
