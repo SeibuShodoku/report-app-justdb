@@ -108,6 +108,7 @@ export function PhotoReportEditor({
   const [reorderOpen, setReorderOpen] = useState(false); // 並べ替えモーダル
   const [photosOpen, setPhotosOpen] = useState(false); // 「写真」＝除外中の写真を報告書に戻す画面
   const [menuOpen, setMenuOpen] = useState(false); // ☰ メニュー（上部ボタンを全部しまう別窓）
+  const [hintOpen, setHintOpen] = useState(false); // ヒント（手順説明）を別窓で
   // まとめ文章の別窓編集（インラインだと狭くて見づらいため、タップで広いモーダルで編集）
   const [summaryEdit, setSummaryEdit] = useState<null | "headerSummary" | "workItems">(null);
   const [summaryDraft, setSummaryDraft] = useState("");
@@ -116,7 +117,13 @@ export function PhotoReportEditor({
 
   // モーダル表示中は背景(編集画面)のスクロール/プル更新を凍結。並べ替えは自前で凍結するため除く。
   useBodyScrollLock(
-    settingsOpen || versionsOpen || coverPickerOpen || photosOpen || menuOpen || summaryEdit !== null
+    settingsOpen ||
+      versionsOpen ||
+      coverPickerOpen ||
+      photosOpen ||
+      menuOpen ||
+      hintOpen ||
+      summaryEdit !== null
   );
 
   // まとめ文章を別窓で開く／閉じる（閉じる時に下書きを反映＝手戻りしない）。
@@ -665,6 +672,14 @@ export function PhotoReportEditor({
         <h1>写真報告書</h1>
         <button
           type="button"
+          className="btn-util"
+          onClick={() => setHintOpen(true)}
+          title="この画面の使い方"
+        >
+          ヒント
+        </button>
+        <button
+          type="button"
           className="btn-util editor-menu-btn"
           onClick={() => setMenuOpen(true)}
           title="保存・AI・PDF・管理・設定・写真などの操作"
@@ -766,10 +781,29 @@ export function PhotoReportEditor({
         </div>
       ) : null}
 
-      <p className="editor-guide no-print">
-        この画面の内容は <b>① 表紙</b> →（<b>② 写真</b>ページ）→ <b>③ まとめ</b> の順で A4 PDF になります。
-        仕上げたら「報告書保存」→「PDF出力（Driveへ保存）」で案件フォルダにPDFを保存します（その場で確認は「プレビュー」＝iPhoneでも見られます）。
-      </p>
+      {/* ヒント（手順説明）は常時表示をやめ、上部「ヒント」ボタンから別窓で開く */}
+      {hintOpen ? (
+        <div className="modal-backdrop no-print" onClick={() => setHintOpen(false)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="inline-actions" style={{ justifyContent: "space-between" }}>
+              <h2>この画面の使い方</h2>
+              <button type="button" className="btn-secondary" onClick={() => setHintOpen(false)}>
+                閉じる
+              </button>
+            </div>
+            <p className="editor-hint">
+              この画面の内容は <b>① 表紙</b> →（<b>② 写真</b>ページ）→ <b>③ まとめ</b> の順で A4 PDF になります。
+            </p>
+            <p className="editor-hint">
+              写真は<b>タップで拡大</b>して注記（赤丸・矢印・文字）や見出しを編集できます。並び順は「② 写真」の
+              <b>並べ替え</b>（A4の2×4＝8枚/ページ）で調整します。
+            </p>
+            <p className="editor-hint">
+              仕上げたら <b>☰ メニュー</b> →「報告書保存」→「PDF出力（Driveへ保存）」で案件フォルダにPDFを保存します（その場で確認は「プレビュー」＝iPhoneでも見られます）。
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {settingsOpen ? (
         <div className="modal-backdrop no-print" onClick={() => setSettingsOpen(false)}>
@@ -1090,15 +1124,22 @@ export function PhotoReportEditor({
         <h2 className="editor-section-title">① 表紙（PDF 1ページ目）</h2>
         {coverItem ? (
           <div className="cover-pick">
+            {/* タップで大きな別窓（表紙選択）が開く。サムネは小さく。 */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="cover-thumb" src={photoUrl(coverItem.fileId, folderId, token)} alt="表紙写真" />
+            <img
+              className="cover-thumb"
+              src={photoUrl(coverItem.fileId, folderId, token)}
+              alt="表紙写真"
+              onClick={() => setCoverPickerOpen(true)}
+              title="タップで表紙を選び直す"
+            />
             <div>
               <p className="editor-hint">
                 現在の表紙：{includedItems.findIndex((it) => it.fileId === coverItem.fileId) + 1}枚目
-                {coverItem.heading ? `「${coverItem.heading}」` : ""}。フォルダの写真から選べます（後からいつでも入替可）。
+                {coverItem.heading ? `「${coverItem.heading}」` : ""}。サムネをタップでも選べます。
               </p>
               <button type="button" className="btn-secondary" onClick={() => setCoverPickerOpen(true)}>
-                表紙を選ぶ
+                選択
               </button>
             </div>
           </div>

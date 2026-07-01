@@ -11,7 +11,7 @@
  * - 並びはローカルで持ち、「完了」/枠外タップで親へ反映（保存は親の「報告書保存」時）。
  * 仕様: docs/architecture/slack-photo-report-architecture.md §6
  */
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 
 type RItem = { fileId: string; heading: string };
@@ -23,6 +23,7 @@ type Props = {
   onClose: () => void;
 };
 
+const PER_PAGE = 8; // A4の1ページ＝横2×縦4＝8枚。並び順もこのページ割りで見せる（端末非依存）
 const LONG_PRESS_MS = 260; // この時間だけ静止し続けたらドラッグ開始
 const MOVE_CANCEL_PX = 12; // 長押し成立前にこれ以上動いたらスクロール意図
 const EDGE_PX = 44; // ドラッグ中、上下この範囲に来たら自動スクロール
@@ -155,8 +156,8 @@ export function PhotoReorderModal({ items, photoUrl, onApply, onClose }: Props) 
       <div className="modal reorder-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h2>写真の並べ替え</h2>
         <p className="notice">
-          番号がPDFの掲載順です。写真を<b>長押ししてからドラッグ</b>で移動（スマホは指で長押し→移動）。
-          一覧は指でスクロール、右上の <b>↑ / ↓</b> でも1つずつ動かせます。
+          A4の1ページ＝<b>横2×縦4＝8枚</b>の割り付けで表示します（PDFと同じ並び・端末で崩れません）。
+          写真を<b>長押ししてからドラッグ</b>で移動（スマホは指で長押し→移動）。一覧は指でスクロール、右上の <b>↑ / ↓</b> でも1つずつ動かせます。
         </p>
         <div
           ref={scrollRef}
@@ -168,8 +169,13 @@ export function PhotoReorderModal({ items, photoUrl, onApply, onClose }: Props) 
         >
           <div className="reorder-grid">
             {order.map((it, i) => (
+              <Fragment key={it.fileId}>
+                {i % PER_PAGE === 0 ? (
+                  <div className="reorder-pagebreak">
+                    {Math.floor(i / PER_PAGE) + 1}ページ目（{i + 1}–{Math.min(i + PER_PAGE, order.length)}枚）
+                  </div>
+                ) : null}
               <div
-                key={it.fileId}
                 data-ri={i}
                 className={`reorder-cell${dragIndex === i && dragging ? " lifted" : ""}`}
               >
@@ -200,6 +206,7 @@ export function PhotoReorderModal({ items, photoUrl, onApply, onClose }: Props) 
                   </button>
                 </span>
               </div>
+              </Fragment>
             ))}
           </div>
         </div>

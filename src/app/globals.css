@@ -197,12 +197,13 @@ button:disabled {
   align-items: flex-start;
 }
 .cover-thumb {
-  width: 120px;
-  height: 90px;
+  width: 84px;
+  height: 63px;
   object-fit: cover;
   border-radius: 8px;
   border: 2px solid var(--accent, #1f6feb);
   flex: 0 0 auto;
+  cursor: pointer; /* タップで表紙選択の別窓を開く */
 }
 .cover-badge {
   display: inline-block;
@@ -385,6 +386,13 @@ button.btn-secondary {
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+  /* スクロールしても上部に固定（写真報告書＋ヒント＋☰ メニュー）。モーダル(z:45+)より下。 */
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--panel, #fff);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
 }
 .editor-topbar h1 {
   margin: 0 auto 0 0; /* タイトルの右に 管理/設定 を寄せる */
@@ -512,8 +520,21 @@ button.btn-secondary {
 }
 .reorder-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  /* A4の割り付けに合わせ横2枚固定（端末幅で列数が変わらない＝PDFと同じ見え方）。 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+/* ページ区切り（8枚ごと＝A4 1ページ）。2列ぶち抜きの見出し。 */
+.reorder-pagebreak {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--accent, #1f6feb);
+  padding: 6px 2px 2px;
+  border-top: 2px dashed var(--border);
+}
+.reorder-pagebreak:first-child {
+  border-top: none;
 }
 .reorder-cell {
   position: relative;
@@ -527,7 +548,7 @@ button.btn-secondary {
 }
 .reorder-cell img {
   width: 100%;
-  height: 84px;
+  height: 110px;
   object-fit: cover;
   display: block;
   pointer-events: none; /* 画像のタップは下のセルに通す＋iOSの長押し保存メニュー抑止 */
