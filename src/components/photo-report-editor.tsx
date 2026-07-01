@@ -751,6 +751,17 @@ export function PhotoReportEditor({
               </button>
               <button
                 type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setPhotosOpen(true);
+                }}
+                title="Googleドライブの写真を、報告書に載せる/載せないで管理・取り込み"
+              >
+                写真管理{excludedItems.length > 0 ? `（除外 ${excludedItems.length}）` : ""}
+              </button>
+              <button
+                type="button"
                 className="btn-secondary"
                 onClick={() => {
                   setMenuOpen(false);
@@ -805,16 +816,9 @@ export function PhotoReportEditor({
               >
                 ⚙️ 設定
               </button>
-              <button
-                type="button"
-                className="btn-util"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setPhotosOpen(true);
-                }}
-              >
-                写真{excludedItems.length > 0 ? `（除外 ${excludedItems.length}）` : ""}
-              </button>
+              <p className="menu-info">
+                案件ID: {caseId}　／　写真 {items.length} 枚（本文 {bodyItems.length}・除外 {excludedItems.length}）
+              </p>
             </div>
           </div>
         </div>
@@ -962,9 +966,6 @@ export function PhotoReportEditor({
           </div>
         </div>
       ) : null}
-
-      <p className="no-print">案件ID: {caseId}</p>
-      <p className="no-print">写真 {items.length} 枚</p>
 
       {message ? (
         <p className={`notice ${message.type} no-print`} role="status">
@@ -1122,36 +1123,52 @@ export function PhotoReportEditor({
         />
       ) : null}
 
-      {/* 「写真」＝報告書に載せていない（除外中の）写真を確認し、載せ直す画面 */}
+      {/* 「写真管理」＝Googleドライブの写真を、採用/不採用トグルで報告書へ載せる/外す＋取り込み */}
       {photosOpen ? (
         <div className="modal-backdrop no-print" onClick={() => setPhotosOpen(false)}>
-          <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+          <div className="modal photos-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <div className="inline-actions" style={{ justifyContent: "space-between" }}>
-              <h2>報告書に載せていない写真（{excludedItems.length}）</h2>
+              <h2>写真管理</h2>
               <button type="button" className="btn-secondary" onClick={() => setPhotosOpen(false)}>
                 閉じる
               </button>
             </div>
+            <div className="inline-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? "取り込み中…" : "＋ Googleドライブに取り込む"}
+              </button>
+            </div>
             <p className="notice">
-              「報告書に載せない」にした写真です（Drive には残っています）。本文・表紙・AIの対象から外れています。「報告書に載せる」で戻せます。
+              フォルダ内の写真です。<b>採用</b>＝報告書に載せる／<b>不採用</b>＝載せない（Driveには残る）。タップで切替。表紙は「①表紙」で選びます。
             </p>
-            {excludedItems.length === 0 ? (
-              <p className="notice">除外中の写真はありません。</p>
+            {items.length === 0 ? (
+              <p className="notice">写真がありません。「＋ Googleドライブに取り込む」で追加してください。</p>
             ) : (
-              <div className="excluded-grid">
-                {excludedItems.map((item) => (
-                  <figure key={item.fileId} className="excluded-cell">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photoUrl(item.fileId, folderId, token)} alt={item.heading || item.name} />
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => patchItemById(item.fileId, { excluded: false })}
-                    >
-                      報告書に載せる
-                    </button>
-                  </figure>
-                ))}
+              <div className="photos-grid">
+                {items.map((item) => {
+                  const adopted = !item.excluded;
+                  const isCover = item.fileId === coverItem?.fileId;
+                  return (
+                    <figure key={item.fileId} className={`photos-cell${adopted ? " adopted" : ""}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={photoUrl(item.fileId, folderId, token)} alt={item.heading || item.name} />
+                      {isCover ? <span className="photos-cover-tag">表紙</span> : null}
+                      <button
+                        type="button"
+                        className={`photos-toggle${adopted ? " on" : " off"}`}
+                        onClick={() => patchItemById(item.fileId, { excluded: adopted })}
+                        aria-pressed={adopted}
+                      >
+                        {adopted ? "✓ 採用" : "不採用"}
+                      </button>
+                    </figure>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1163,7 +1180,7 @@ export function PhotoReportEditor({
         <h2 className="editor-section-title">① 表紙（PDF 1ページ目）</h2>
         {coverItem ? (
           <div className="cover-pick">
-            {/* タップで大きな別窓（表紙選択）が開く。サムネは小さく。 */}
+            {/* タップで大きな別窓（表紙選択）が開く。表紙は独立した1枚＝本文には出さない。 */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               className="cover-thumb"
@@ -1173,13 +1190,7 @@ export function PhotoReportEditor({
               title="タップで表紙を選び直す"
             />
             <div>
-              <p className="editor-hint">
-                現在の表紙：{includedItems.findIndex((it) => it.fileId === coverItem.fileId) + 1}枚目
-                {coverItem.heading ? `「${coverItem.heading}」` : ""}。サムネをタップでも選べます。
-              </p>
-              <button type="button" className="btn-secondary" onClick={() => setCoverPickerOpen(true)}>
-                選択
-              </button>
+              <p className="editor-hint">タップで写真を再選択できます（表紙は本文には出ません）。</p>
             </div>
           </div>
         ) : (
@@ -1205,11 +1216,10 @@ export function PhotoReportEditor({
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              title="この報告書フォルダに写真を追加アップロードする"
+              onClick={() => setPhotosOpen(true)}
+              title="写真の取り込み・採用/不採用を管理する"
             >
-              {uploading ? "アップロード中…" : "＋ 写真を追加"}
+              🖼 写真管理
             </button>
           ) : null}
           <button
