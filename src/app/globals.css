@@ -143,15 +143,17 @@ button:disabled {
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  column-gap: 8%; /* 各列≈45%幅＋間を余白に（端末非依存の2列割付） */
+  row-gap: 14px;
 }
 
 .photo-card {
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 10px;
+  padding: 0; /* 写真をカード（列）幅いっぱいに敷く */
+  overflow: hidden;
   display: grid;
-  gap: 8px;
+  gap: 0;
   background: #fff;
 }
 
@@ -1192,12 +1194,9 @@ button.btn-secondary {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
-/* 一覧の見出し（小さく・全部見えるように）＋「載せない」小ボタン */
+/* 一覧の見出し（写真の下に小さく・全部見えるように） */
 .photo-card-caption {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  padding: 5px 8px 7px;
 }
 .photo-card-heading {
   font-size: 12px;
@@ -1226,21 +1225,26 @@ button.btn-secondary {
 /* 一覧の写真セル：縦横比に依らず高さをそろえる（縦写真で行が縦に伸びない）。
    wrap を画像にシュリンクラップさせて SVG＝画像ボックスの一致を保つ（重なりが崩れない）。
    集中モード（.annot--focus）は全画面固定なので除外する。 */
-.photo-card .annot:not(.annot--focus) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.photo-card .annot:not(.annot--focus) .annot-wrap {
-  width: auto;
-  max-width: 100%;
-  max-height: 400px;
-}
-.photo-card .annot:not(.annot--focus) .annot-img {
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 400px;
+/* 画面のみ（印刷はA4割付の別ルールに任せる＝ここが print を上書きしないよう screen 限定）。
+   列幅いっぱいに写真を敷き、高さは200px固定（縦優先にしない＝coverで幅基準に埋める）。 */
+@media screen {
+  .photo-card .annot:not(.annot--focus) {
+    display: block;
+  }
+  .photo-card .annot:not(.annot--focus) .annot-wrap {
+    width: 100%;
+    height: 200px;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+  }
+  .photo-card .annot:not(.annot--focus) .annot-img {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    object-fit: cover;
+  }
 }
 
 @media (max-width: 860px) {

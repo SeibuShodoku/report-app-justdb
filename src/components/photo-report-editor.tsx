@@ -1272,19 +1272,11 @@ export function PhotoReportEditor({
                       headingPlaceholder={`写真 ${index + 1}`}
                       compact
                     />
-                    {/* 一覧側の見出しは小さく（編集は写真タップ→拡大窓の中で）。 */}
+                    {/* 一覧は写真＋見出しだけ（編集は写真タップ→拡大窓／採用可否は「写真管理」で）。 */}
                     <figcaption className="photo-card-caption no-print">
                       <span className="photo-card-heading">
                         {index + 1}．{item.heading || `写真 ${index + 1}`}
                       </span>
-                      <button
-                        type="button"
-                        className="btn-exclude"
-                        title="この写真を報告書に載せない（Drive には残ります・あとで載せ直せます）"
-                        onClick={() => patchItemById(item.fileId, { excluded: true })}
-                      >
-                        載せない
-                      </button>
                     </figcaption>
                   </figure>
                 );
