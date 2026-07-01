@@ -1238,23 +1238,27 @@ button.btn-secondary {
 /* 画面のみ（印刷はA4割付の別ルールに任せる＝ここが print を上書きしないよう screen 限定）。
    列幅いっぱいに写真を敷き、高さは200px固定（縦優先にしない＝coverで幅基準に埋める）。 */
 @media screen {
-  /* 一覧の写真：列の幅いっぱいに敷き、高さは自然（縦横比のまま）。固定高さ・coverは付けない。
-     印刷(@media print)のA4割付を侵さないよう screen 限定。 */
+  /* 一覧の写真：列幅いっぱい＋全カード同じ縦横比(4:3)＝同じ高さに揃える。写真は cover で枠に合わせて
+     切り抜く（縦写真も同じ高さ）。フル画像＋注記はタップ拡大で確認。印刷は @media print 側に任せる。 */
   .photo-card .annot:not(.annot--focus) {
     display: block;
   }
   .photo-card .annot:not(.annot--focus) .annot-wrap {
     width: 100%;
+    aspect-ratio: 4 / 3;
     height: auto;
     max-height: none;
     border: none;
     border-radius: 0;
+    overflow: hidden;
   }
   .photo-card .annot:not(.annot--focus) .annot-img {
     width: 100%;
-    height: auto;
+    height: 100%;
     max-width: 100%;
     max-height: none;
+    object-fit: cover;
+    object-position: center;
   }
 }
 
