@@ -803,7 +803,7 @@ export function PhotoReportEditor({
                 }}
                 title="Googleドライブの写真を、報告書に載せる/載せないで管理・取り込み"
               >
-                写真管理{excludedItems.length > 0 ? `（除外 ${excludedItems.length}）` : ""}
+                写真管理
               </button>
               <button
                 type="button"
@@ -814,7 +814,11 @@ export function PhotoReportEditor({
                 }}
                 disabled={generating || genPolling || summaryGenerating || summaryPolling}
               >
-                {generating ? "依頼中…" : reportExists ? "AIで再作成" : "AIで作成"}
+                {generating
+                  ? "依頼中…"
+                  : reportExists
+                    ? "すべてAIに任せて作り直す"
+                    : "すべてAIに任せて作成"}
               </button>
               <button
                 type="button"
@@ -860,7 +864,8 @@ export function PhotoReportEditor({
                 ⚙️ 設定
               </button>
               <p className="menu-info">
-                案件ID: {caseId}　／　写真 {items.length} 枚（本文 {bodyItems.length}・除外 {excludedItems.length}）
+                案件ID: {caseId}　／　写真 {items.length} 枚（本文 {bodyItems.length}・表紙 {coverItem ? 1 : 0}・除外{" "}
+                {excludedItems.length}）
               </p>
             </div>
           </div>
@@ -1050,7 +1055,7 @@ export function PhotoReportEditor({
       {versionsOpen ? (
         <div className="modal-backdrop no-print" onClick={() => setVersionsOpen(false)}>
           <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-            <div className="inline-actions" style={{ justifyContent: "space-between" }}>
+            <div className="inline-actions modal-head-sticky" style={{ justifyContent: "space-between" }}>
               <h2>管理（版履歴・新しい順）</h2>
               <button type="button" className="btn-secondary" onClick={() => setVersionsOpen(false)}>
                 閉じる
@@ -1170,7 +1175,7 @@ export function PhotoReportEditor({
       {photosOpen ? (
         <div className="modal-backdrop no-print" onClick={() => setPhotosOpen(false)}>
           <div className="modal photos-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-            <div className="inline-actions" style={{ justifyContent: "space-between" }}>
+            <div className="inline-actions modal-head-sticky" style={{ justifyContent: "space-between" }}>
               <h2>写真管理</h2>
               <button type="button" className="btn-secondary" onClick={() => setPhotosOpen(false)}>
                 閉じる

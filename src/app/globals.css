@@ -632,6 +632,18 @@ button.btn-secondary {
   margin: 0;
 }
 
+/* モーダル最上部に固定するヘッダ（スクロールしても「閉じる」が常に見える）。
+   モーダルの padding(20px) を打ち消して端に密着＋全幅、内側に padding を戻す定番レシピ。 */
+.modal-head-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--panel);
+  margin: -20px -20px 8px;
+  padding: 20px 20px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
 /* まとめ文章の別窓エディタ（広い編集面）＋ インラインは「タップで開く」プレビュー */
 .summary-edit-modal {
   width: min(680px, 100%);
