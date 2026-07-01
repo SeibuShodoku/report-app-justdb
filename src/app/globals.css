@@ -1228,29 +1228,24 @@ button.btn-secondary {
 /* 画面のみ（印刷はA4割付の別ルールに任せる＝ここが print を上書きしないよう screen 限定）。
    列幅いっぱいに写真を敷き、高さは200px固定（縦優先にしない＝coverで幅基準に埋める）。 */
 @media screen {
+  /* サイズ指定を解除（縦横とも枠・写真ぶん）。写真は本来の縦横比・列幅なりに出る。
+     画面外へのはみ出し防止に max-width:100% だけ残す。 */
   .photo-card .annot:not(.annot--focus) {
-    display: block !important;
-    width: 100%;
-    min-width: 0;
+    display: block;
   }
   .photo-card .annot:not(.annot--focus) .annot-wrap {
-    display: block !important;
-    width: 100% !important;
-    height: 190px !important;
-    min-height: 190px !important;
-    max-height: 190px !important;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    max-height: none;
     border: none;
     border-radius: 0;
-    overflow: hidden !important;
   }
   .photo-card .annot:not(.annot--focus) .annot-img {
-    display: block !important;
-    width: 100% !important;
-    height: 100% !important;
-    max-width: none !important;
-    max-height: none !important;
-    object-fit: cover !important;
-    object-position: center;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: none;
   }
 }
 
