@@ -186,7 +186,8 @@ async function readVersionReport(
  */
 export async function requestGeneration(
   folderId: string,
-  caseId: string
+  caseId: string,
+  mode: "full" | "summary" = "full"
 ): Promise<{ requeued: boolean }> {
   const existing = await sbSelect<{ id: number }>(
     `photo_report_jobs?folder_id=eq.${encodeURIComponent(folderId)}&select=id&limit=1`
@@ -194,6 +195,7 @@ export async function requestGeneration(
   if (existing[0]) {
     await sbPatch(`photo_report_jobs?id=eq.${existing[0].id}`, {
       status: "queued",
+      mode, // 依頼のたびに上書き（full=全生成 / summary=まとめだけ）。生成は folder 単位で1件ずつ。
       error: null,
       notified_at: null,
       updated_at: new Date().toISOString()
@@ -204,7 +206,8 @@ export async function requestGeneration(
     dedupe_key: `web:${folderId}`,
     folder_id: folderId,
     case_id: caseId || null,
-    status: "queued"
+    status: "queued",
+    mode
   });
   return { requeued: false };
 }
@@ -215,6 +218,17 @@ export async function getGenerationStatus(folderId: string): Promise<{ status: s
     `photo_report_jobs?folder_id=eq.${encodeURIComponent(folderId)}&select=status&order=id.desc&limit=1`
   );
   return { status: rows[0]?.status ?? null };
+}
+
+/** 現在版 report の「概要・内容」だけを返す（まとめだけAI生成の完了反映用＝ページ全体を再読込せずに済む）。 */
+export async function getReportSummary(
+  folderId: string
+): Promise<{ headerSummary: string; workItems: string[] }> {
+  const rows = await sbSelect<{ report_json: { headerSummary?: string; workItems?: string[] } }>(
+    `photo_reports?folder_id=eq.${encodeURIComponent(folderId)}&select=report_json&limit=1`
+  );
+  const r = rows[0]?.report_json;
+  return { headerSummary: r?.headerSummary ?? "", workItems: r?.workItems ?? [] };
 }
 
 /**

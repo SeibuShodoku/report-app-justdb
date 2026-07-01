@@ -85,6 +85,12 @@ const reportJsonSchema = z.object({
     .min(1)
 });
 
+// まとめだけAI生成（mode=summary）の出力＝概要・内容のみ（写真は読まない）。
+const summaryOutSchema = z.object({
+  headerSummary: z.string().max(2000).optional(),
+  workItems: z.array(z.string().max(300)).max(50).default([])
+});
+
 // --- Drive（直読み・mgmt-strat OAuth refresh token） ---
 let cachedToken = null;
 async function getDriveToken() {
@@ -390,18 +396,23 @@ async function upsertReport(folderId, caseId, reportJson) {
   );
 }
 
-/** 既存の現在版から「載せない」写真集合を読む（無ければ空）。AI再生成で人の除外を消さないため。 */
-async function getExcludedFileIds(folderId) {
+/** 既存の現在版 report_json を読む（無ければ null）。まとめだけ生成の土台＋除外の引継ぎに使う。 */
+async function getExistingReport(folderId) {
   try {
     const rows = await sb(
       "GET",
       `photo_reports?folder_id=eq.${encodeURIComponent(folderId)}&select=report_json&limit=1`
     );
-    const ex = rows?.[0]?.report_json?.excludedFileIds;
-    return Array.isArray(ex) ? ex.filter((s) => typeof s === "string") : [];
+    return rows?.[0]?.report_json ?? null;
   } catch {
-    return [];
+    return null;
   }
+}
+
+/** 既存の現在版から「載せない」写真集合を読む（無ければ空）。AI再生成で人の除外を消さないため。 */
+async function getExcludedFileIds(folderId) {
+  const ex = (await getExistingReport(folderId))?.excludedFileIds;
+  return Array.isArray(ex) ? ex.filter((s) => typeof s === "string") : [];
 }
 
 /** フォルダの生成設定を読む（photo_report_settings）。無ければ null（既定で生成）。 */
@@ -481,6 +492,32 @@ function buildPrompt(ctx, docFileNames, hasDigest, settings) {
   ].join("\n");
 }
 
+/** まとめだけAI生成（mode=summary）のプロンプト。写真は読まず、見出し＋設定＋文脈から概要・内容を書く。 */
+function buildSummaryPrompt(headings, settings, hasDigest) {
+  const { lines: setLines, kind } = settingsLines(settings);
+  const docLine = hasDigest
+    ? "このディレクトリの **case-digest.md** に案件の時系列ダイジェストがあります。まずそれを読み、実際の作業内容（対象生物・対策の種類）を把握してください。"
+    : "案件書類はありません。見出しと方針から判断してください。";
+  const headingLines = headings.length
+    ? headings.map((h, i) => `${i + 1}. ${h}`).join("\n")
+    : "(見出し未入力)";
+  return [
+    `これは害虫防除（${kind}）の写真報告書の「まとめ」だけを作る作業です。**写真は見ません**。`,
+    docLine,
+    "【各写真の見出し一覧】（これが実施内容の根拠。ここから概要と内容を組み立てる）",
+    headingLines,
+    "【方針】",
+    ...setLines,
+    "見出しに無いことを勝手に足さない（誇張・断定をしない）。",
+    "【書き方】",
+    `・headerSummary は${kind}概要（まとめ）。上記の文体・トーンで2〜3文。現場全体を俯瞰した要約。`,
+    `・workItems は実施した${kind}内容を **数項目に集約** した配列（各項目1文・場所＋処理を簡潔に。見出しを整理/集約して作る。例『101号室・102号室・103号室の床下に木部剤・土壌剤を散布処理』）。`,
+    "出力は **このディレクトリに report.json を1つ書き出す**こと。形式は厳密に次のJSONのみ:",
+    '{ "headerSummary": "…", "workItems": ["…","…"] }',
+    "JSON以外の文章は report.json に書かないこと。"
+  ].join("\n");
+}
+
 /**
  * VM の Claude Code をヘッドレスで1回起動して report.json を書かせる。stdout/stderr を返す。
  * configDir を渡すと CLAUDE_CONFIG_DIR を上書き＝そのアカウントで実行（アカウント切替に使う）。
@@ -544,6 +581,11 @@ function extractJson(text) {
 }
 
 async function processJob(job) {
+  // まとめだけ生成（写真を読まず概要・内容のみ）は専用の軽量経路へ。
+  if (job.mode === "summary") {
+    await processSummaryJob(job);
+    return;
+  }
   // 試行上限ガード：claim 時に attempts は加算済み。上限超過は Claude を回さず error 確定
   // （恒久的に失敗するジョブが再投入で延々とサブスクを焼くのを防ぐ）。
   if ((job.attempts ?? 0) > MAX_ATTEMPTS) {
@@ -611,6 +653,70 @@ async function processJob(job) {
     const message = err instanceof Error ? err.message : String(err);
     await finishJob(job.id, { status: "error", error: message.slice(0, 1000) });
     console.error(`[error] job=${job.id}: ${message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * まとめだけAI生成（mode=summary）：写真を読まず、既存 report の見出し＋設定＋文脈から
+ * 概要(headerSummary)・内容(workItems) だけを作り、既存 report に **その2項目だけ上書き** する。
+ * 写真の見出し/並び/表紙/除外は温存＝軽量かつ人の編集を壊さない。
+ */
+async function processSummaryJob(job) {
+  if ((job.attempts ?? 0) > MAX_ATTEMPTS) {
+    await finishJob(job.id, { status: "error", error: `再試行上限(${MAX_ATTEMPTS}回)に到達しました。` });
+    console.warn(`[summary skip] job=${job.id} attempts=${job.attempts} > ${MAX_ATTEMPTS}`);
+    return;
+  }
+  const dir = mkdtempSync(join(tmpdir(), `ps-${job.id}-`));
+  try {
+    const existing = await getExistingReport(job.folder_id);
+    if (!existing || !Array.isArray(existing.photoItems)) {
+      throw new Error("先に写真報告書を保存してください（見出しが無いとまとめを作れません）。");
+    }
+    const excludedSet = new Set(
+      Array.isArray(existing.excludedFileIds) ? existing.excludedFileIds : []
+    );
+    // 「載せる」写真の見出しだけを根拠にする（除外写真の見出しは使わない）。
+    const headings = existing.photoItems
+      .filter((p) => !excludedSet.has(p.fileId))
+      .map((p) => (p.heading || "").trim())
+      .filter(Boolean);
+
+    const digest = await readCaseDigest(job.folder_id);
+    if (digest) writeFileSync(join(dir, "case-digest.md"), digest);
+    const settings = await getSettings(job.folder_id);
+
+    const { stdout } = await runClaude(dir, buildSummaryPrompt(headings, settings, !!digest));
+
+    const reportPath = join(dir, "report.json");
+    let raw;
+    if (existsSync(reportPath)) {
+      raw = readFileSync(reportPath, "utf-8");
+    } else {
+      const fromStdout = extractJson(stdout);
+      if (!fromStdout) {
+        throw new Error(`report.json が生成されませんでした。claude応答: ${String(stdout).trim().slice(0, 600)}`);
+      }
+      raw = fromStdout;
+      console.warn(`[warn] summary job=${job.id}: report.json 未生成→stdoutのJSONを採用`);
+    }
+    const out = summaryOutSchema.parse(JSON.parse(raw));
+
+    // 既存 report に概要・内容だけ差し替え（他は温存）。
+    const merged = {
+      ...existing,
+      headerSummary: out.headerSummary ?? existing.headerSummary,
+      workItems: out.workItems
+    };
+    await upsertReport(job.folder_id, job.case_id, merged);
+    await finishJob(job.id, { status: "done", error: null });
+    console.log(`[summary done] job=${job.id} folder=${job.folder_id} headings=${headings.length} items=${out.workItems.length}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await finishJob(job.id, { status: "error", error: message.slice(0, 1000) });
+    console.error(`[summary error] job=${job.id}: ${message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

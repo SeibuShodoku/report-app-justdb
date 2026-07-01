@@ -1,4 +1,4 @@
-import { getGenerationStatus, requestGeneration } from "@/lib/photo-report-store";
+import { getGenerationStatus, getReportSummary, requestGeneration } from "@/lib/photo-report-store";
 import { authorizeFolderAccess } from "@/lib/security/proxy-auth";
 import { supabaseConfigured } from "@/lib/supabase-rest";
 
@@ -13,7 +13,13 @@ export async function GET(request: Request) {
   const auth = authorizeFolderAccess(request, folderId);
   if (!auth.ok) return Response.json({ error: auth.error }, { status: auth.status });
   try {
-    return Response.json(await getGenerationStatus(folderId));
+    const st = await getGenerationStatus(folderId);
+    // まとめだけAI生成の完了反映用に、done なら概要・内容も返す（クライアントは全体再読込せず反映）。
+    if (st.status === "done") {
+      const summary = await getReportSummary(folderId);
+      return Response.json({ ...st, ...summary });
+    }
+    return Response.json(st);
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "状態取得に失敗しました。" },
@@ -40,9 +46,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "生成依頼は人の操作に限ります。" }, { status: 403 });
   }
 
+  // mode=summary＝写真を読まず「概要・内容」だけを見出しから生成（軽量）。既定は full。
+  const genMode = params.get("mode") === "summary" ? "summary" : "full";
+
   try {
-    const r = await requestGeneration(folderId, auth.caseId);
-    return Response.json({ ok: true, ...r });
+    const r = await requestGeneration(folderId, auth.caseId, genMode);
+    return Response.json({ ok: true, mode: genMode, ...r });
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "生成依頼に失敗しました。" },

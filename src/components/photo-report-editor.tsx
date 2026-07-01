@@ -101,6 +101,8 @@ export function PhotoReportEditor({
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genPolling, setGenPolling] = useState(false); // AI再作成の完了待ち（ポーリング）
+  const [summaryGenerating, setSummaryGenerating] = useState(false); // まとめだけAI 依頼中
+  const [summaryPolling, setSummaryPolling] = useState(false); // まとめだけAI 完了待ち
   const [coverPickerOpen, setCoverPickerOpen] = useState(false); // 表紙選択モーダル
   const [reorderOpen, setReorderOpen] = useState(false); // 並べ替えモーダル
   // まとめ文章の別窓編集（インラインだと狭くて見づらいため、タップで広いモーダルで編集）
@@ -116,10 +118,11 @@ export function PhotoReportEditor({
   // onFocus ではなく onClick で開く（フォーカス復帰で無限に開き直す不具合を避ける）。
   const openSummary = useCallback(
     (field: "headerSummary" | "workItems") => {
+      if (summaryGenerating || summaryPolling) return; // AI生成中はロック（編集させない）
       setSummaryDraft(field === "headerSummary" ? headerSummary : workItemsText);
       setSummaryEdit(field);
     },
-    [headerSummary, workItemsText]
+    [headerSummary, workItemsText, summaryGenerating, summaryPolling]
   );
   const closeSummary = useCallback(() => {
     setSummaryEdit((field) => {
@@ -300,6 +303,115 @@ export function PhotoReportEditor({
       setGenerating(false);
     }
   }, [folderId, token, reportExists]);
+
+  // 「まとめだけAI生成」＝見出しを保存してから summary ジョブを投入し、完了で概要・内容だけ反映。
+  const generateSummary = useCallback(async () => {
+    const hasHeading = items.some((it) => !it.excluded && it.heading.trim());
+    if (!hasHeading) {
+      setMessage({ type: "error", text: "先に写真の見出しを入力してください（見出しからまとめを作ります）。" });
+      return;
+    }
+    if (
+      !window.confirm(
+        "見出しをもとに AI が「概要」と「内容」を作成します（写真は読みません）。現在の概要・内容は上書きされます。よろしいですか？"
+      )
+    ) {
+      return;
+    }
+    setSummaryGenerating(true);
+    setMessage(null);
+    try {
+      // worker は保存済み report の見出しを読むので、まず現在の内容を保存する。
+      const saveRes = await fetch(
+        `/api/photo-report/save?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ report: buildReport() })
+        }
+      );
+      const saveJson = await saveRes.json();
+      if (!saveRes.ok) throw new Error(saveJson?.error ?? `保存に失敗（${saveRes.status}）`);
+      // まとめだけ生成を投入
+      const res = await fetch(
+        `/api/photo-report/generate?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}&mode=summary`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? `依頼に失敗（${res.status}）`);
+      setReportExists(true);
+      setMessage({
+        type: "success",
+        text: "まとめを作成中です。完成すると自動で概要・内容に反映します（数十秒。このページは開いたままで）。"
+      });
+      try {
+        if (typeof Notification !== "undefined" && Notification.permission === "default") {
+          void Notification.requestPermission();
+        }
+      } catch {
+        /* 通知不可環境は無視 */
+      }
+      setSummaryPolling(true);
+    } catch (e) {
+      setMessage({ type: "error", text: e instanceof Error ? e.message : "まとめ生成の依頼に失敗しました。" });
+    } finally {
+      setSummaryGenerating(false);
+    }
+  }, [folderId, token, items, buildReport]);
+
+  // まとめだけAIの完了をポーリング＝概要・内容だけ差し替え（ページ全体は再読込しない＝編集を失わない）。
+  useEffect(() => {
+    if (!summaryPolling) return;
+    let stop = false;
+    const started = Date.now();
+    const tick = async () => {
+      if (stop) return;
+      try {
+        const res = await fetch(
+          `/api/photo-report/generate?folderId=${encodeURIComponent(folderId)}&token=${encodeURIComponent(token)}`,
+          { cache: "no-store" }
+        );
+        const json = await res.json();
+        if (res.ok && json.status === "done") {
+          stop = true;
+          setSummaryPolling(false);
+          if (typeof json.headerSummary === "string") setHeaderSummary(json.headerSummary);
+          if (Array.isArray(json.workItems)) setWorkItemsText(json.workItems.join("\n"));
+          setMessage({
+            type: "success",
+            text: "✅ まとめ（概要・内容）を作成しました。内容を確認して「報告書保存」で確定できます。"
+          });
+          try {
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+              new Notification("写真報告書", { body: "まとめ（概要・内容）が完成しました。" });
+            }
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+        if (res.ok && json.status === "error") {
+          stop = true;
+          setSummaryPolling(false);
+          setMessage({ type: "error", text: "まとめの生成に失敗しました。少し待って再度お試しください。" });
+          return;
+        }
+      } catch {
+        /* 一時的な取得失敗は無視して継続 */
+      }
+      if (Date.now() - started > 5 * 60 * 1000) {
+        stop = true;
+        setSummaryPolling(false);
+        setMessage({ type: "error", text: "完了確認がタイムアウトしました。少し待ってページを再読み込みしてください。" });
+      }
+    };
+    const id = setInterval(tick, 6000);
+    void tick();
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
+  }, [summaryPolling, folderId, token]);
 
   // 「AIで再作成」の完了をポーリングして知らせる（Web再作成はSlackスレッドが無いためアプリ内通知）。
   useEffect(() => {
@@ -527,7 +639,12 @@ export function PhotoReportEditor({
         <button type="button" className="btn-primary" onClick={save} disabled={saving || includedItems.length === 0}>
           {saving ? "保存中…" : "報告書保存"}
         </button>
-        <button type="button" className="btn-secondary" onClick={generate} disabled={generating}>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={generate}
+          disabled={generating || genPolling || summaryGenerating || summaryPolling}
+        >
           {generating ? "依頼中…" : reportExists ? "AIで再作成" : "AIで作成"}
         </button>
         <button
@@ -986,7 +1103,25 @@ export function PhotoReportEditor({
 
       {/* ③ まとめ（PDFの最終ページ＝概要・内容・免責）。画面でここを編集すると下のPDF体裁に出る */}
       <div className="editor-section no-print">
-        <h2 className="editor-section-title">③ まとめ（PDFの最終ページ）</h2>
+        <div className="editor-section-head">
+          <h2 className="editor-section-title">③ まとめ（PDFの最終ページ）</h2>
+          <div className="editor-section-head-actions">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={generateSummary}
+              disabled={
+                summaryGenerating || summaryPolling || generating || genPolling || includedItems.length === 0
+              }
+              title="写真の見出しをもとに、AIが概要と内容を作成します（写真は読まない軽量生成）"
+            >
+              {summaryGenerating || summaryPolling ? "作成中…" : "✨ まとめだけAI生成"}
+            </button>
+          </div>
+        </div>
+        {summaryGenerating || summaryPolling ? (
+          <p className="notice">AIが概要・内容を作成中です…（完成すると自動で反映されます）</p>
+        ) : null}
         <div className="editor-field">
           <label htmlFor="headerSummary">{kindLabel}概要（まとめ文章）</label>
           <textarea
@@ -995,6 +1130,7 @@ export function PhotoReportEditor({
             value={headerSummary}
             readOnly
             rows={3}
+            disabled={summaryGenerating || summaryPolling}
             placeholder="タップして概要を編集（任意）"
             onClick={() => openSummary("headerSummary")}
           />
@@ -1007,6 +1143,7 @@ export function PhotoReportEditor({
             value={workItemsText}
             readOnly
             rows={4}
+            disabled={summaryGenerating || summaryPolling}
             placeholder={"タップして内容を編集（1行に1項目）"}
             onClick={() => openSummary("workItems")}
           />
