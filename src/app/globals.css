@@ -1232,6 +1232,19 @@ button.btn-secondary {
    集中モード（.annot--focus）は全画面固定なので除外する。 */
 /* 画面のみ（印刷はA4割付の別ルールに任せる＝ここが print を上書きしないよう screen 限定）。
    列幅いっぱいに写真を敷き、高さは200px固定（縦優先にしない＝coverで幅基準に埋める）。 */
+/* ===== 一時診断：セレクタが当たっているか色枠で可視化（後で削除） =====
+   青＝.photo-card / 赤＝.photo-card .annot:not(.annot--focus) .annot-wrap / 緑＝同 .annot-img */
+.photo-card {
+  outline: 2px solid blue;
+}
+.photo-card .annot:not(.annot--focus) .annot-wrap {
+  outline: 3px solid red;
+}
+.photo-card .annot:not(.annot--focus) .annot-img {
+  outline: 3px solid lime;
+}
+/* ===== 診断ここまで ===== */
+
 @media screen {
   /* 一覧の写真：列の幅いっぱいに敷き、高さは自然（縦横比のまま）。固定高さ・coverは付けない。
      印刷(@media print)のA4割付を侵さないよう screen 限定。 */
