@@ -401,10 +401,32 @@ button.btn-secondary {
   /* スクロールしても上部に固定（写真報告書＋ヒント＋☰ メニュー）。モーダル(z:45+)より下。 */
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 30;
   background: var(--panel, #fff);
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
+}
+
+/* アラート/アナウンスを上部バーの直下に固定（# → ## の段積み）。無い時は要素ごと消える。 */
+.editor-alert {
+  position: sticky;
+  top: var(--topbar-h, 52px);
+  z-index: 29;
+  background: var(--panel, #fff);
+  display: grid;
+  gap: 6px;
+  padding: 4px 0;
+  margin-bottom: 8px;
+}
+
+/* ②「写真」見出し＋写真管理/並べ替えボタンを、上部バー＋アラートの下に固定（### 相当）。
+   .photo-section 内でだけ固定＝グリッドを抜けたら剥がれる（mdの見出しのような挙動）。 */
+.photo-section-head {
+  position: sticky;
+  top: calc(var(--topbar-h, 52px) + var(--alert-h, 0px));
+  z-index: 28;
+  background: var(--panel, #fff);
+  padding: 6px 0;
 }
 .editor-topbar h1 {
   margin: 0 auto 0 0; /* タイトルの右に 管理/設定 を寄せる */

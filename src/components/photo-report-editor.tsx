@@ -101,6 +101,7 @@ export function PhotoReportEditor({
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genPolling, setGenPolling] = useState(false); // AI再作成の完了待ち（ポーリング）
+  const [genDone, setGenDone] = useState(false); // 全生成が完了＝最新版の読み込み待ち（手動/復帰時に確実にreload）
   const [summaryGenerating, setSummaryGenerating] = useState(false); // まとめだけAI 依頼中
   const [summaryPolling, setSummaryPolling] = useState(false); // まとめだけAI 完了待ち
   const [pdfSaving, setPdfSaving] = useState(false); // PDFをDriveへ保存中
@@ -204,6 +205,10 @@ export function PhotoReportEditor({
   // 結果を items に追記する（リロードしない＝編集中の見出し等を失わない）。
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
+  // 段組み固定（上部バー→アラート→②見出し）の各段の高さを測って sticky の top オフセットにする。
+  const panelRef = useRef<HTMLElement | null>(null);
+  const topbarRef = useRef<HTMLDivElement | null>(null);
+  const alertRef = useRef<HTMLDivElement | null>(null);
 
   const uploadPhotos = useCallback(
     async (files: FileList | null) => {
@@ -550,15 +555,19 @@ export function PhotoReportEditor({
         if (res.ok && json.status === "done") {
           stop = true;
           setGenPolling(false);
-          setMessage({ type: "success", text: "✅ 完成しました。最新版を読み込みます…" });
+          setGenDone(true); // 「最新版を読み込む」ボタン＋タブ復帰時の自動reloadを有効化
+          setMessage({ type: "success", text: "✅ 完成しました。「最新版を読み込む」を押すと反映されます。" });
           try {
             if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-              new Notification("写真報告書", { body: "AIの再作成が完成しました。" });
+              new Notification("写真報告書", { body: "AIの作成が完成しました。ページを開いて読み込んでください。" });
             }
           } catch {
             /* noop */
           }
-          setTimeout(() => window.location.reload(), 1500);
+          // 前景なら自動reload（背面タブでは保留されるため、下のボタン＋復帰時reloadが保険）。
+          setTimeout(() => {
+            if (document.visibilityState === "visible") window.location.reload();
+          }, 1200);
           return;
         }
         if (res.ok && json.status === "error") {
@@ -589,6 +598,36 @@ export function PhotoReportEditor({
       clearInterval(id);
     };
   }, [genPolling, folderId, token]);
+
+  // 全生成完了後、Slack通知を見てタブへ戻ってきた時に自動で最新版を読み込む（背面で保留された分の保険）。
+  useEffect(() => {
+    if (!genDone) return;
+    const onVis = () => {
+      if (document.visibilityState === "visible") window.location.reload();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [genDone]);
+
+  // 段組み固定用：上部バーとアラートの高さを CSS 変数にして、下段の sticky top を段積みにする
+  // （# → ## → ### のように、上部バー→アラート→②見出しが順に張り付く）。
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const apply = () => {
+      panel.style.setProperty("--topbar-h", `${topbarRef.current?.offsetHeight ?? 0}px`);
+      panel.style.setProperty("--alert-h", `${alertRef.current?.offsetHeight ?? 0}px`);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    if (topbarRef.current) ro.observe(topbarRef.current);
+    if (alertRef.current) ro.observe(alertRef.current);
+    window.addEventListener("resize", apply);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", apply);
+    };
+  }, [message, genDone]);
 
   const refreshVersions = useCallback(async () => {
     try {
@@ -751,8 +790,8 @@ export function PhotoReportEditor({
   }
 
   return (
-    <section className="panel">
-      <div className="editor-topbar no-print">
+    <section className="panel" ref={panelRef}>
+      <div className="editor-topbar no-print" ref={topbarRef}>
         <h1>写真報告書</h1>
         <button
           type="button"
@@ -1015,10 +1054,19 @@ export function PhotoReportEditor({
         </div>
       ) : null}
 
-      {message ? (
-        <p className={`notice ${message.type} no-print`} role="status">
-          {message.text}
-        </p>
+      {message || genDone ? (
+        <div className="editor-alert no-print" ref={alertRef}>
+          {message ? (
+            <p className={`notice ${message.type}`} role="status">
+              {message.text}
+            </p>
+          ) : null}
+          {genDone ? (
+            <button type="button" className="btn-primary" onClick={() => window.location.reload()}>
+              最新版を読み込む
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {/* ===== 印刷(PDF) 表紙 ===== */}
@@ -1257,7 +1305,8 @@ export function PhotoReportEditor({
       />
 
       {/* ② 写真（PDF本文・1ページ8枚）＝各写真に見出し・赤丸。並びは「並べ替え」モーダルで俯瞰調整 */}
-      <div className="editor-section-head no-print">
+      <div className="photo-section">
+      <div className="editor-section-head no-print photo-section-head">
         <h2 className="editor-section-title">② 写真（PDF本文・各写真に見出し／赤丸）</h2>
         <div className="editor-section-head-actions">
           {items.length > 0 ? (
@@ -1333,6 +1382,7 @@ export function PhotoReportEditor({
           ))}
         </div>
       )}
+      </div>
 
       {/* ③ まとめ（PDFの最終ページ＝概要・内容・免責）。画面でここを編集すると下のPDF体裁に出る */}
       <div className="editor-section no-print">
