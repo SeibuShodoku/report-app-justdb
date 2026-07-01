@@ -56,11 +56,31 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Annotation | null>(null);
   const drawing = useRef(false);
+  // 選択中の図形をドラッグで移動／端点ドラッグで拡縮する。move 中は onChange のみ更新し、
+  // 確定時に「開始前の配列」を1回だけ undo へ積む（ドラッグ＝1操作）。
+  const dragRef = useRef<{
+    mode: "move" | "resize";
+    id: string;
+    ptIndex: number;
+    start: AnnotationPoint;
+    base: Annotation;
+    before: Annotation[];
+    moved: boolean;
+  } | null>(null);
   // 文字ツール：タップ位置を覚えてアプリ内モーダルで入力する（ネイティブ window.prompt は
   // モバイルで pointerdown 中に開くと閉じても再発火する＝無限に開き直す不具合があるため使わない）。
   const [textDraft, setTextDraft] = useState<AnnotationPoint | null>(null);
   const [textValue, setTextValue] = useState("");
-  useBodyScrollLock(textDraft !== null); // 文字入力モーダル中は背景を凍結
+  // 集中モード：描画ツール（選択以外）を選ぶと、その写真を画面中央に固定し背景を暗転する。
+  // 小さなグリッド上で狙って描く／動かすのは辛いので、主役の写真だけを大きく出す。
+  // ツールとは独立した状態にして、集中したまま「選択」へ切り替えて移動・拡縮・色替えもできる。
+  const [focused, setFocused] = useState(false);
+  const exitFocus = useCallback(() => {
+    setFocused(false);
+    setTool("select");
+    setSelectedId(null);
+  }, []);
+  useBodyScrollLock(focused || textDraft !== null); // 集中モード／文字入力中は背景を凍結
 
   // UNDO/REDO 用スナップショット（onChange を起こす確定操作の前後で積む）。
   const [past, setPast] = useState<Annotation[][]>([]);
@@ -136,7 +156,12 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
   const commitText = useCallback(() => {
     const t = textValue.trim();
     if (textDraft && t) {
-      commit([...value, { id: newId(), type: "text", points: [textDraft], color, text: t.slice(0, 500) }]);
+      const id = newId();
+      commit([...value, { id, type: "text", points: [textDraft], color, text: t.slice(0, 500) }]);
+      // 追加直後に「選択」ツールへ切替＋その文字を選択状態にする＝指を離したあとも、
+      // そのまま写真内をドラッグして置き場所を微調整できる（作った瞬間に位置決めできる）。
+      setTool("select");
+      setSelectedId(id);
     }
     setTextDraft(null);
     setTextValue("");
@@ -149,18 +174,36 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
-      if (!drawing.current || !draft) return;
+      // 描画中
+      if (drawing.current && draft) {
+        const p = norm(e.clientX, e.clientY);
+        setDraft((d) => {
+          if (!d) return d;
+          if (d.type === "freehand") {
+            const pts = d.points ?? [];
+            return { ...d, points: [...pts, p] };
+          }
+          return { ...d, points: [d.points?.[0] ?? p, p] };
+        });
+        return;
+      }
+      // 移動／拡縮中（選択図形のドラッグ）
+      const d = dragRef.current;
+      if (!d) return;
       const p = norm(e.clientX, e.clientY);
-      setDraft((d) => {
-        if (!d) return d;
-        if (d.type === "freehand") {
-          const pts = d.points ?? [];
-          return { ...d, points: [...pts, p] };
-        }
-        return { ...d, points: [d.points?.[0] ?? p, p] };
-      });
+      const dx = p.x - d.start.x;
+      const dy = p.y - d.start.y;
+      if (Math.abs(dx) > 0.002 || Math.abs(dy) > 0.002) d.moved = true;
+      const basePts = d.base.points ?? [];
+      const nextPts =
+        d.mode === "move"
+          ? basePts.map((pt) => ({ x: clamp01(pt.x + dx), y: clamp01(pt.y + dy) }))
+          : basePts.map((pt, i) =>
+              i === d.ptIndex ? { x: clamp01(pt.x + dx), y: clamp01(pt.y + dy) } : pt
+            );
+      onChange(value.map((a) => (a.id === d.id ? { ...d.base, points: nextPts } : a)));
     },
-    [draft, norm]
+    [draft, norm, value, onChange]
   );
 
   const finishDraft = useCallback(() => {
@@ -178,6 +221,59 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
     setDraft(null);
   }, [draft, value, commit]);
 
+  // 選択図形の移動／端点拡縮の開始・終了。開始時に選択＋色をパレットへ反映（#1）。
+  const beginMove = useCallback(
+    (e: React.PointerEvent, a: Annotation) => {
+      if (tool !== "select") return;
+      e.stopPropagation();
+      e.preventDefault();
+      setSelectedId(a.id);
+      setColor(a.color ?? COLORS[0]);
+      svgRef.current?.setPointerCapture(e.pointerId);
+      dragRef.current = {
+        mode: "move",
+        id: a.id,
+        ptIndex: -1,
+        start: norm(e.clientX, e.clientY),
+        base: a,
+        before: value,
+        moved: false
+      };
+    },
+    [tool, norm, value]
+  );
+
+  const beginResize = useCallback(
+    (e: React.PointerEvent, a: Annotation, ptIndex: number) => {
+      if (tool !== "select") return;
+      e.stopPropagation();
+      e.preventDefault();
+      setSelectedId(a.id);
+      setColor(a.color ?? COLORS[0]);
+      svgRef.current?.setPointerCapture(e.pointerId);
+      dragRef.current = {
+        mode: "resize",
+        id: a.id,
+        ptIndex,
+        start: norm(e.clientX, e.clientY),
+        base: a,
+        before: value,
+        moved: false
+      };
+    },
+    [tool, norm, value]
+  );
+
+  const endDrag = useCallback(() => {
+    const d = dragRef.current;
+    if (!d) return;
+    dragRef.current = null;
+    if (d.moved) {
+      setPast((p) => [...p, d.before]); // ドラッグ全体で1回だけ undo に積む
+      setFuture([]);
+    }
+  }, []);
+
   const px = useCallback((p: AnnotationPoint) => ({ x: p.x * box.w, y: p.y * box.h }), [box]);
 
   function renderShape(a: Annotation, isDraft: boolean) {
@@ -192,14 +288,11 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
       vectorEffect: "non-scaling-stroke" as const,
       strokeLinecap: "round" as const,
       strokeLinejoin: "round" as const,
-      onClick: isDraft
-        ? undefined
-        : (ev: React.MouseEvent) => {
-            if (tool !== "select") return;
-            ev.stopPropagation();
-            setSelectedId(a.id);
-          },
-      style: tool === "select" && !isDraft ? { cursor: "pointer" } : undefined
+      onPointerDown:
+        !isDraft && tool === "select"
+          ? (ev: React.PointerEvent) => beginMove(ev, a)
+          : undefined,
+      style: tool === "select" && !isDraft ? { cursor: "move" } : undefined
     };
 
     if (a.type === "circle") {
@@ -257,7 +350,7 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
           fontSize={selected ? 22 : 18}
           fontWeight={700}
           style={common.style}
-          onClick={common.onClick}
+          onPointerDown={common.onPointerDown}
           paintOrder="stroke"
           stroke="#fff"
           strokeWidth={selected ? 4 : 3}
@@ -270,10 +363,77 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
     return null;
   }
 
+  // 選択中の図形が一目で分かるように、輪郭を囲む破線フレーム＋薄い塗りを重ねる
+  // （strokeWidth を太らせるだけでは見分けがつかない、というフィードバックへの対応）。
+  function renderSelectionFrame(a: Annotation) {
+    const pts = (a.points ?? []).map(px);
+    if (pts.length === 0) return null;
+    let minX = Math.min(...pts.map((p) => p.x));
+    let minY = Math.min(...pts.map((p) => p.y));
+    let maxX = Math.max(...pts.map((p) => p.x));
+    let maxY = Math.max(...pts.map((p) => p.y));
+    if (a.type === "text") {
+      // テキストは1点（左下=baseline）保持なので、文字数から概算の外接矩形を作る。
+      const fs = 22;
+      const w = Math.max(28, (a.text?.length ?? 1) * fs * 0.62);
+      minX = pts[0].x - 4;
+      minY = pts[0].y - fs - 2;
+      maxX = pts[0].x + w;
+      maxY = pts[0].y + 6;
+    }
+    const pad = 6;
+    return (
+      <rect
+        x={minX - pad}
+        y={minY - pad}
+        width={maxX - minX + pad * 2}
+        height={maxY - minY + pad * 2}
+        rx={5}
+        fill="rgba(37,99,235,0.10)"
+        stroke="#2563eb"
+        strokeWidth={1.5}
+        strokeDasharray="6 4"
+        vectorEffect="non-scaling-stroke"
+        style={tool === "select" ? { cursor: "move" } : undefined}
+        onPointerDown={(ev) => beginMove(ev, a)}
+      />
+    );
+  }
+
+  // 拡縮ハンドル：2点図形（丸/囲/矢印/線）の端点に掴みやすい円を出す。
+  // 手書き・文字は点数や1点保持のため v1 は移動のみ（ハンドルなし）。
+  function renderHandles(a: Annotation) {
+    if (tool !== "select") return null;
+    if (a.type !== "circle" && a.type !== "rect" && a.type !== "line" && a.type !== "arrow") {
+      return null;
+    }
+    const pts = (a.points ?? []).map(px);
+    if (pts.length < 2) return null;
+    return (
+      <>
+        {[0, 1].map((i) => (
+          <circle
+            key={i}
+            cx={pts[i].x}
+            cy={pts[i].y}
+            r={9}
+            fill="#ffffff"
+            stroke="#2563eb"
+            strokeWidth={2}
+            vectorEffect="non-scaling-stroke"
+            style={{ cursor: "nwse-resize" }}
+            onPointerDown={(ev) => beginResize(ev, a, i)}
+          />
+        ))}
+      </>
+    );
+  }
+
   const ready = box.w > 0 && box.h > 0;
 
   return (
-    <div className="annot">
+    <div className={`annot${focused ? " annot--focus" : ""}`}>
+      {focused ? <div className="annot-focus-backdrop no-print" onClick={exitFocus} /> : null}
       <div className="annot-toolbar no-print">
         {TOOLS.map((t) => (
           <button
@@ -282,7 +442,11 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
             className={`annot-tool${tool === t.id ? " active" : ""}`}
             onClick={() => {
               setTool(t.id);
-              if (t.id !== "select") setSelectedId(null);
+              // 描画ツールを持つと集中モードへ。「選択」への切替では集中を維持＝そのまま編集。
+              if (t.id !== "select") {
+                setSelectedId(null);
+                setFocused(true);
+              }
             }}
           >
             {t.label}
@@ -314,6 +478,11 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
         <button type="button" className="annot-tool" onClick={deleteSelected} disabled={!selectedId}>
           削除
         </button>
+        {focused ? (
+          <button type="button" className="annot-tool annot-done" onClick={exitFocus}>
+            ✓ 完了
+          </button>
+        ) : null}
       </div>
 
       <div className="annot-wrap" ref={wrapRef}>
@@ -328,8 +497,14 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
             style={{ touchAction: "none", cursor: tool === "select" ? "default" : "crosshair" }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
-            onPointerUp={finishDraft}
-            onPointerCancel={finishDraft}
+            onPointerUp={() => {
+              finishDraft();
+              endDrag();
+            }}
+            onPointerCancel={() => {
+              finishDraft();
+              endDrag();
+            }}
             onClick={(e) => {
               if (tool === "text") {
                 // タップ位置を覚えて入力モーダルを開く（クリック完了後に開くのでループしない）。
@@ -342,7 +517,11 @@ export function PhotoAnnotator({ src, alt, value, onChange }: Props) {
             }}
           >
             {value.map((a) => (
-              <g key={a.id}>{renderShape(a, false)}</g>
+              <g key={a.id}>
+                {a.id === selectedId ? renderSelectionFrame(a) : null}
+                {renderShape(a, false)}
+                {a.id === selectedId ? renderHandles(a) : null}
+              </g>
             ))}
             {draft ? <g>{renderShape(draft, true)}</g> : null}
           </svg>

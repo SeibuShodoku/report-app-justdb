@@ -51,6 +51,7 @@ describe("buildVersionFile", () => {
     caseId: "C1",
     driveFolderId: "F1",
     workItems: [],
+    excludedFileIds: [],
     photoItems: [{ fileId: "a", annotations: [] }]
   };
   it("自己記述（version/generatedAt/source/report）を組み立てる", () => {

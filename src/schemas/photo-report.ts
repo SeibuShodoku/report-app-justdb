@@ -53,6 +53,9 @@ export const photoReportDraftSchema = z.object({
   workItems: z.array(z.string().max(300)).max(50).default([]),
   reporter: z.string().max(80).optional(),
   generatedAt: z.string().datetime().optional(),
+  // この報告書に「載せない」写真の fileId。実体は Drive に残す＝非破壊、いつでも載せ直せる。
+  // photoItems には（見出し/注記を温存するため）除外写真も残し、載せる/載せないはこの集合で判定する。
+  excludedFileIds: z.array(z.string().max(200)).max(400).default([]),
   photoItems: z.array(photoDraftItemSchema).min(1).max(200)
 });
 

@@ -32,6 +32,7 @@ type EditItem = {
   heading: string;
   annotationNote: string;
   annotations: Annotation[];
+  excluded: boolean; // 報告書に「載せない」＝PDF/AIから外す（Drive には残す・載せ直し可）
 };
 
 type VersionEntry = {
@@ -69,7 +70,8 @@ function toEditItems(view: PhotoReportView): EditItem[] {
     mimeType: p.mimeType,
     heading: p.heading ?? "",
     annotationNote: p.annotationNote ?? "",
-    annotations: p.annotations ?? []
+    annotations: p.annotations ?? [],
+    excluded: p.excluded ?? false
   }));
 }
 
@@ -101,18 +103,39 @@ export function PhotoReportEditor({
   const [genPolling, setGenPolling] = useState(false); // AI再作成の完了待ち（ポーリング）
   const [coverPickerOpen, setCoverPickerOpen] = useState(false); // 表紙選択モーダル
   const [reorderOpen, setReorderOpen] = useState(false); // 並べ替えモーダル
+  // まとめ文章の別窓編集（インラインだと狭くて見づらいため、タップで広いモーダルで編集）
+  const [summaryEdit, setSummaryEdit] = useState<null | "headerSummary" | "workItems">(null);
+  const [summaryDraft, setSummaryDraft] = useState("");
   // 保存済み報告書の有無（AIボタン文言＝作成/再作成）。保存/生成依頼で true に倒す（リロードを待たず更新）。
   const [reportExists, setReportExists] = useState<boolean>(hasReport ?? false);
 
   // モーダル表示中は背景(編集画面)のスクロール/プル更新を凍結。並べ替えは自前で凍結するため除く。
-  useBodyScrollLock(settingsOpen || versionsOpen || coverPickerOpen);
+  useBodyScrollLock(settingsOpen || versionsOpen || coverPickerOpen || summaryEdit !== null);
+
+  // まとめ文章を別窓で開く／閉じる（閉じる時に下書きを反映＝手戻りしない）。
+  // onFocus ではなく onClick で開く（フォーカス復帰で無限に開き直す不具合を避ける）。
+  const openSummary = useCallback(
+    (field: "headerSummary" | "workItems") => {
+      setSummaryDraft(field === "headerSummary" ? headerSummary : workItemsText);
+      setSummaryEdit(field);
+    },
+    [headerSummary, workItemsText]
+  );
+  const closeSummary = useCallback(() => {
+    setSummaryEdit((field) => {
+      if (field === "headerSummary") setHeaderSummary(summaryDraft);
+      else if (field === "workItems") setWorkItemsText(summaryDraft);
+      return null;
+    });
+  }, [summaryDraft]);
 
   const setField = useCallback(<K extends keyof PhotoReportSettings>(key: K, value: PhotoReportSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  const patchItem = useCallback((index: number, patch: Partial<EditItem>) => {
-    setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
+  // fileId で1枚を更新する（除外で表示リストが間引かれてもズレない＝index 依存を避ける）。
+  const patchItemById = useCallback((fileId: string, patch: Partial<EditItem>) => {
+    setItems((prev) => prev.map((it) => (it.fileId === fileId ? { ...it, ...patch } : it)));
   }, []);
 
   // 並べ替えモーダルの結果（fileId の新しい並び）を items に反映する。
@@ -172,7 +195,8 @@ export function PhotoReportEditor({
                 mimeType: f.type || "image/jpeg",
                 heading: "",
                 annotationNote: "",
-                annotations: [] as Annotation[]
+                annotations: [] as Annotation[],
+                excluded: false
               }
             ]);
             ok++;
@@ -195,25 +219,28 @@ export function PhotoReportEditor({
     [folderId, token]
   );
 
-  const buildReport = useCallback(
-    () => ({
+  const buildReport = useCallback(() => {
+    const included = items.filter((it) => !it.excluded);
+    return {
       caseId,
       driveFolderId: folderId,
-      coverFileId: items.find((it) => it.fileId === coverFileId)?.fileId ?? items[0]?.fileId,
+      // 表紙は「載せる」写真から選ぶ（除外中の写真が表紙のままにならないよう先頭にフォールバック）。
+      coverFileId: included.find((it) => it.fileId === coverFileId)?.fileId ?? included[0]?.fileId,
       headerSummary: headerSummary.trim() || undefined,
       workItems: workItemsText
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean),
+      // photoItems は除外写真も温存（見出し/注記を残し、載せ直しても内容が消えない）。
+      excludedFileIds: items.filter((it) => it.excluded).map((it) => it.fileId),
       photoItems: items.map((it) => ({
         fileId: it.fileId,
         heading: it.heading.trim() || undefined,
         annotationNote: it.annotationNote.trim() || undefined,
         annotations: it.annotations
       }))
-    }),
-    [caseId, folderId, coverFileId, headerSummary, workItemsText, items]
-  );
+    };
+  }, [caseId, folderId, coverFileId, headerSummary, workItemsText, items]);
 
   const saveSettings = useCallback(async () => {
     setSettingsSaving(true);
@@ -470,15 +497,18 @@ export function PhotoReportEditor({
   const execDate = (settings.execDate ?? "").trim();
   const reporter = (settings.reporter ?? "").trim();
   const workItemsList = workItemsText.split("\n").map((s) => s.trim()).filter(Boolean);
-  const coverItem = items.find((it) => it.fileId === coverFileId) ?? items[0];
+  // 「載せる」写真だけが本文・表紙・番号の対象。「載せない」写真は下のトレイに分けて載せ直せる。
+  const includedItems = items.filter((it) => !it.excluded);
+  const excludedItems = items.filter((it) => it.excluded);
+  const coverItem = includedItems.find((it) => it.fileId === coverFileId) ?? includedItems[0];
 
   // 印刷レイアウト＝テンプレート grid-8（縦4×横2＝8枚/A4ページ）。
-  // 写真を 8 枚ずつのページに分割し、各ページを A4 固定で描く（画面準拠をやめ環境非依存に）。
+  // 「載せる」写真を 8 枚ずつのページに分割し、各ページを A4 固定で描く（除外写真は本文に出さない）。
   // 将来テンプレート（例 detail-3）を足すときは PHOTOS_PER_PAGE とクラスを切り替える。
   const PHOTOS_PER_PAGE = 8;
   const photoPages: EditItem[][] = [];
-  for (let i = 0; i < items.length; i += PHOTOS_PER_PAGE) {
-    photoPages.push(items.slice(i, i + PHOTOS_PER_PAGE));
+  for (let i = 0; i < includedItems.length; i += PHOTOS_PER_PAGE) {
+    photoPages.push(includedItems.slice(i, i + PHOTOS_PER_PAGE));
   }
 
   return (
@@ -494,7 +524,7 @@ export function PhotoReportEditor({
       </div>
 
       <div className="editor-actions no-print">
-        <button type="button" className="btn-primary" onClick={save} disabled={saving || items.length === 0}>
+        <button type="button" className="btn-primary" onClick={save} disabled={saving || includedItems.length === 0}>
           {saving ? "保存中…" : "報告書保存"}
         </button>
         <button type="button" className="btn-secondary" onClick={generate} disabled={generating}>
@@ -685,8 +715,11 @@ export function PhotoReportEditor({
       {versionsOpen ? (
         <div className="modal-backdrop no-print" onClick={() => setVersionsOpen(false)}>
           <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-            <div className="inline-actions">
+            <div className="inline-actions" style={{ justifyContent: "space-between" }}>
               <h2>管理（版履歴・新しい順）</h2>
+              <button type="button" className="btn-secondary" onClick={() => setVersionsOpen(false)}>
+                閉じる
+              </button>
             </div>
           {versions === null ? (
             <p className="notice">読み込み中…</p>
@@ -744,11 +777,6 @@ export function PhotoReportEditor({
               })}
             </ul>
           )}
-            <div className="inline-actions">
-              <button type="button" className="btn-secondary" onClick={() => setVersionsOpen(false)}>
-                閉じる
-              </button>
-            </div>
           </div>
         </div>
       ) : null}
@@ -760,11 +788,11 @@ export function PhotoReportEditor({
               <h2>表紙の写真を選ぶ</h2>
             </div>
             <p className="notice">フォルダの写真から表紙（PDF1ページ目）を選びます。後からいつでも入れ替えられます。</p>
-            {items.length === 0 ? (
+            {includedItems.length === 0 ? (
               <p className="notice">写真がありません。</p>
             ) : (
               <div className="cover-grid">
-                {items.map((it, i) => (
+                {includedItems.map((it, i) => (
                   <button
                     key={it.fileId}
                     type="button"
@@ -796,7 +824,7 @@ export function PhotoReportEditor({
 
       {reorderOpen ? (
         <PhotoReorderModal
-          items={items.map((it) => ({ fileId: it.fileId, heading: it.heading }))}
+          items={includedItems.map((it) => ({ fileId: it.fileId, heading: it.heading }))}
           photoUrl={(id) => photoUrl(id, folderId, token)}
           onApply={reorderByFileIds}
           onClose={() => setReorderOpen(false)}
@@ -812,7 +840,7 @@ export function PhotoReportEditor({
             <img className="cover-thumb" src={photoUrl(coverItem.fileId, folderId, token)} alt="表紙写真" />
             <div>
               <p className="editor-hint">
-                現在の表紙：{items.findIndex((it) => it.fileId === coverItem.fileId) + 1}枚目
+                現在の表紙：{includedItems.findIndex((it) => it.fileId === coverItem.fileId) + 1}枚目
                 {coverItem.heading ? `「${coverItem.heading}」` : ""}。フォルダの写真から選べます（後からいつでも入替可）。
               </p>
               <button type="button" className="btn-secondary" onClick={() => setCoverPickerOpen(true)}>
@@ -854,7 +882,7 @@ export function PhotoReportEditor({
             type="button"
             className="btn-secondary"
             onClick={() => setReorderOpen(true)}
-            disabled={items.length < 2}
+            disabled={includedItems.length < 2}
             title="写真の掲載順を一覧で並べ替える"
           >
             ↕ 並べ替え
@@ -891,12 +919,22 @@ export function PhotoReportEditor({
                     <div className="print-only print-caption">
                       {index + 1}．{item.heading || `写真 ${index + 1}`}
                     </div>
-                    {isCover ? <div className="cover-badge no-print">★ 表紙</div> : null}
+                    <div className="photo-card-badges no-print">
+                      {isCover ? <div className="cover-badge">★ 表紙にも使われています</div> : null}
+                      <button
+                        type="button"
+                        className="btn-exclude"
+                        title="この写真を報告書に載せない（Drive には残ります・あとで載せ直せます）"
+                        onClick={() => patchItemById(item.fileId, { excluded: true })}
+                      >
+                        報告書に載せない
+                      </button>
+                    </div>
                     <PhotoAnnotator
                       src={photoUrl(item.fileId, folderId, token)}
                       alt={item.heading || item.name}
                       value={item.annotations}
-                      onChange={(next) => patchItem(index, { annotations: next })}
+                      onChange={(next) => patchItemById(item.fileId, { annotations: next })}
                     />
                     <figcaption className="editor-field no-print">
                       <label htmlFor={`h-${item.fileId}`}>見出し（写真 {index + 1}）</label>
@@ -906,11 +944,11 @@ export function PhotoReportEditor({
                         value={item.heading}
                         maxLength={80}
                         placeholder={`写真 ${index + 1}`}
-                        onChange={(e) => patchItem(index, { heading: e.target.value })}
+                        onChange={(e) => patchItemById(item.fileId, { heading: e.target.value })}
                       />
                       {/* 所見は grid-8 PDF に出ないため一旦非表示（detail-3 等のカット追加時に再表示）。データ(annotationNote)は保持。 */}
                       {item.annotations.length > 0 ? (
-                        <p className="notice no-print">注記 {item.annotations.length} 件（保存に含まれます）</p>
+                        <p className="notice no-print">図形 {item.annotations.length} 件（保存に含まれます）</p>
                       ) : null}
                     </figcaption>
                   </figure>
@@ -921,6 +959,31 @@ export function PhotoReportEditor({
         </div>
       )}
 
+      {/* 報告書に「載せない」写真のトレイ（画面のみ）。実体は Drive に残り、いつでも載せ直せる。 */}
+      {excludedItems.length > 0 ? (
+        <div className="editor-section excluded-tray no-print">
+          <h2 className="editor-section-title">報告書に載せない写真（{excludedItems.length}枚）</h2>
+          <p className="editor-hint">
+            これらは本文・表紙・AIの対象から外れます（Drive には残っています）。「載せる」で戻せます。
+          </p>
+          <div className="excluded-grid">
+            {excludedItems.map((item) => (
+              <figure key={item.fileId} className="excluded-cell">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photoUrl(item.fileId, folderId, token)} alt={item.heading || item.name} />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => patchItemById(item.fileId, { excluded: false })}
+                >
+                  報告書に載せる
+                </button>
+              </figure>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {/* ③ まとめ（PDFの最終ページ＝概要・内容・免責）。画面でここを編集すると下のPDF体裁に出る */}
       <div className="editor-section no-print">
         <h2 className="editor-section-title">③ まとめ（PDFの最終ページ）</h2>
@@ -928,23 +991,58 @@ export function PhotoReportEditor({
           <label htmlFor="headerSummary">{kindLabel}概要（まとめ文章）</label>
           <textarea
             id="headerSummary"
+            className="summary-inline"
             value={headerSummary}
-            maxLength={2000}
-            placeholder="現場全体のまとめ（任意）"
-            onChange={(e) => setHeaderSummary(e.target.value)}
+            readOnly
+            rows={3}
+            placeholder="タップして概要を編集（任意）"
+            onClick={() => openSummary("headerSummary")}
           />
         </div>
         <div className="editor-field">
           <label htmlFor="workItems">{kindLabel}内容（1行に1項目）</label>
           <textarea
             id="workItems"
+            className="summary-inline"
             value={workItemsText}
-            maxLength={3000}
-            placeholder={"例:\n101号室、102号室及び103号室の床下に木部剤及び土壌剤を散布処理\n101号室、102号室及び103号室の風呂場の壁面を穿孔し薬剤を注入処理"}
-            onChange={(e) => setWorkItemsText(e.target.value)}
+            readOnly
+            rows={4}
+            placeholder={"タップして内容を編集（1行に1項目）"}
+            onClick={() => openSummary("workItems")}
           />
         </div>
       </div>
+
+      {/* まとめ文章の別窓エディタ（広い textarea で編集） */}
+      {summaryEdit ? (
+        <div className="modal-backdrop no-print" onClick={closeSummary}>
+          <div className="modal summary-edit-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="inline-actions" style={{ justifyContent: "space-between" }}>
+              <h2>
+                {summaryEdit === "headerSummary"
+                  ? `${kindLabel}概要（まとめ文章）`
+                  : `${kindLabel}内容（1行に1項目）`}
+              </h2>
+              <button type="button" className="btn-secondary" onClick={closeSummary}>
+                閉じる
+              </button>
+            </div>
+            <textarea
+              autoFocus
+              className="summary-edit-area"
+              value={summaryDraft}
+              maxLength={summaryEdit === "headerSummary" ? 2000 : 3000}
+              placeholder={
+                summaryEdit === "headerSummary"
+                  ? "現場全体のまとめ（任意）"
+                  : "例:\n101号室、102号室及び103号室の床下に木部剤及び土壌剤を散布処理\n101号室、102号室及び103号室の風呂場の壁面を穿孔し薬剤を注入処理"
+              }
+              onChange={(e) => setSummaryDraft(e.target.value)}
+            />
+            <p className="editor-hint">閉じると内容が反映されます（「報告書保存」で新版になります）。</p>
+          </div>
+        </div>
+      ) : null}
 
       {/* ===== 印刷(PDF) 最終ページ：概要／内容／免責 ===== */}
       <div className="print-only print-summary">

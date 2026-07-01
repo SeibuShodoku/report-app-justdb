@@ -19,6 +19,7 @@ export type PhotoReportItemView = {
   heading?: string;
   annotationNote?: string;
   annotations: Annotation[];
+  excluded?: boolean; // この報告書に「載せない」写真（Drive には残す＝非破壊・載せ直し可）
 };
 
 export type PhotoReportView = {
@@ -55,6 +56,7 @@ export type StoredReportJson = {
   coverFileId?: string;
   headerSummary?: string;
   workItems?: string[];
+  excludedFileIds?: string[]; // 報告書に「載せない」写真の集合
   photoItems: Array<{
     fileId: string;
     heading?: string;
@@ -74,6 +76,7 @@ export function overlayReport(
   stored: StoredReportJson | null
 ): PhotoReportView {
   if (!stored) return view;
+  const excluded = new Set(stored.excludedFileIds ?? []);
   const byId = new Map(view.photoItems.map((p) => [p.fileId, p]));
   const used = new Set<string>();
   const ordered: PhotoReportItemView[] = [];
@@ -85,12 +88,13 @@ export function overlayReport(
       ...base,
       heading: item.heading ?? base.heading,
       annotationNote: item.annotationNote ?? base.annotationNote,
-      annotations: item.annotations ?? base.annotations
+      annotations: item.annotations ?? base.annotations,
+      excluded: excluded.has(item.fileId)
     });
     used.add(item.fileId);
   }
   for (const p of view.photoItems) {
-    if (!used.has(p.fileId)) ordered.push(p);
+    if (!used.has(p.fileId)) ordered.push({ ...p, excluded: excluded.has(p.fileId) });
   }
   return {
     ...view,

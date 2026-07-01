@@ -72,6 +72,7 @@ const reportJsonSchema = z.object({
   coverFileId: z.string().max(200).optional(), // 表紙にする写真の fileId（AIが代表1枚を選ぶ・不正/未指定は編集面が先頭にフォールバック）
   headerSummary: z.string().max(2000).optional(),
   workItems: z.array(z.string().max(300)).max(50).default([]), // 施工内容/調査内容（最終ページ）
+  excludedFileIds: z.array(z.string().max(200)).max(400).default([]), // 人が「載せない」にした写真（AI再生成でも保持）
   photoItems: z
     .array(
       z.object({
@@ -389,6 +390,20 @@ async function upsertReport(folderId, caseId, reportJson) {
   );
 }
 
+/** 既存の現在版から「載せない」写真集合を読む（無ければ空）。AI再生成で人の除外を消さないため。 */
+async function getExcludedFileIds(folderId) {
+  try {
+    const rows = await sb(
+      "GET",
+      `photo_reports?folder_id=eq.${encodeURIComponent(folderId)}&select=report_json&limit=1`
+    );
+    const ex = rows?.[0]?.report_json?.excludedFileIds;
+    return Array.isArray(ex) ? ex.filter((s) => typeof s === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 /** フォルダの生成設定を読む（photo_report_settings）。無ければ null（既定で生成）。 */
 async function getSettings(folderId) {
   try {
@@ -541,8 +556,12 @@ async function processJob(job) {
   }
   const dir = mkdtempSync(join(tmpdir(), `pr-${job.id}-`));
   try {
-    const images = (await listImages(job.folder_id)).slice(0, MAX_PHOTOS);
-    if (images.length === 0) throw new Error("フォルダに写真がありません。");
+    // 人が「載せない」にした写真は AI に見せない（見出しも付けず・サブスク消費も抑える）。
+    const excludedSet = new Set(await getExcludedFileIds(job.folder_id));
+    const listed = (await listImages(job.folder_id)).slice(0, MAX_PHOTOS);
+    if (listed.length === 0) throw new Error("フォルダに写真がありません。");
+    const kept = listed.filter((im) => !excludedSet.has(im.fileId));
+    const images = kept.length > 0 ? kept : listed; // 全除外の異常時は全件で続行（ハードフェイル回避）
     for (const img of images) await downloadPhoto(img, dir);
 
     // 案件文脈（フォルダ名＋主要PDF）を集めて同梱
@@ -583,6 +602,8 @@ async function processJob(job) {
     if (reportJson.coverFileId && !reportJson.photoItems.some((p) => p.fileId === reportJson.coverFileId)) {
       delete reportJson.coverFileId;
     }
+    // 人が設定した「載せない」写真は AI 再生成でも保持する（除外は人の操作が正）。
+    reportJson.excludedFileIds = [...excludedSet];
     await upsertReport(job.folder_id, job.case_id, reportJson);
     await finishJob(job.id, { status: "done", error: null });
     console.log(`[done] job=${job.id} folder=${job.folder_id} photos=${images.length} digest=${digest ? "yes" : "no"} docs=${docNames.length} items=${reportJson.photoItems.length} cover=${reportJson.coverFileId ? "ai" : "default"}`);

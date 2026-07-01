@@ -214,6 +214,58 @@ button:disabled {
   padding: 2px 8px;
   border-radius: 999px;
 }
+
+/* 写真カード上部のバッジ列（表紙バッジ＋「報告書に載せない」トグル） */
+.photo-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+}
+.btn-exclude {
+  width: auto;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #b91c1c;
+  background: #fff;
+  border: 1px solid #f0c2c2;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.btn-exclude:hover {
+  background: #fef2f2;
+}
+
+/* 「載せない」写真トレイ（画面のみ） */
+.excluded-tray {
+  background: #f6f6f7;
+  border-style: dashed;
+}
+.excluded-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+.excluded-cell {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+.excluded-cell img {
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  filter: grayscale(0.4) opacity(0.7);
+}
+.excluded-cell button {
+  width: 100%;
+}
 .editor-hint {
   font-size: 12.5px;
   color: #555;
@@ -545,6 +597,22 @@ button.btn-secondary {
 
 .modal h2 {
   margin: 0;
+}
+
+/* まとめ文章の別窓エディタ（広い編集面）＋ インラインは「タップで開く」プレビュー */
+.summary-edit-modal {
+  width: min(680px, 100%);
+}
+.summary-edit-area {
+  width: 100%;
+  min-height: 45vh;
+  resize: vertical;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.summary-inline {
+  cursor: pointer;
+  background: #fff;
 }
 
 /* ===== 見積エディタ（リング2） ===== */
@@ -958,6 +1026,58 @@ button.btn-secondary {
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+/* 集中モード：描画ツール選択中は、その写真を画面中央に固定し背景を暗転する。
+   道具（ツールボタン）と写真だけをビビッドに、周囲はグレーに落として狙って描けるようにする。 */
+.annot--focus {
+  position: fixed;
+  inset: 0;
+  z-index: 46;
+  margin: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+/* 暗転レイヤーは集中モード内の最背面（z:0）。ツール/写真は前面（z:1）に持ち上げる。 */
+.annot-focus-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.8);
+  z-index: 0;
+}
+.annot--focus .annot-toolbar {
+  position: relative;
+  z-index: 1;
+  justify-content: center;
+  max-width: 96vw;
+  background: #fff;
+  padding: 8px 10px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.annot--focus .annot-wrap {
+  position: relative;
+  z-index: 1;
+  width: auto;
+  max-width: 96vw;
+  max-height: 70vh;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.annot--focus .annot-img {
+  width: auto;
+  height: auto;
+  max-width: 96vw;
+  max-height: 70vh;
+}
+.annot-done {
+  background: #16a34a;
+  color: #fff;
+  border-color: #16a34a;
+  font-weight: 800;
 }
 
 @media (max-width: 860px) {
