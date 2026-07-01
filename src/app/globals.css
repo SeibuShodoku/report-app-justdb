@@ -22,7 +22,11 @@ body {
 main {
   min-height: 100dvh;
   display: grid;
-  place-items: center;
+  /* 幅の定まった1列を敷く。これが無いと justify-items:center で .panel が「中身幅」に縮み、
+     panel の width:100% が中身基準に化けて写真グリッドまで圧迫される（スマホで顕著）。 */
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  justify-items: center;
   padding: 24px;
 }
 
