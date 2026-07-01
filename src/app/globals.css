@@ -1229,26 +1229,27 @@ button.btn-secondary {
    列幅いっぱいに写真を敷き、高さは200px固定（縦優先にしない＝coverで幅基準に埋める）。 */
 @media screen {
   .photo-card .annot:not(.annot--focus) {
-    display: block;
+    display: block !important;
     width: 100%;
     min-width: 0;
   }
   .photo-card .annot:not(.annot--focus) .annot-wrap {
-    display: block;
-    width: 100%;
-    height: 190px;
-    min-height: 190px;
-    max-height: 190px;
+    display: block !important;
+    width: 100% !important;
+    height: 190px !important;
+    min-height: 190px !important;
+    max-height: 190px !important;
     border: none;
     border-radius: 0;
+    overflow: hidden !important;
   }
   .photo-card .annot:not(.annot--focus) .annot-img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    max-width: none;
-    max-height: none;
-    object-fit: cover;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    object-fit: cover !important;
     object-position: center;
   }
 }
