@@ -109,6 +109,7 @@ export function PhotoReportEditor({
   const [photosOpen, setPhotosOpen] = useState(false); // 「写真」＝除外中の写真を報告書に戻す画面
   const [menuOpen, setMenuOpen] = useState(false); // ☰ メニュー（上部ボタンを全部しまう別窓）
   const [hintOpen, setHintOpen] = useState(false); // ヒント（手順説明）を別窓で
+  const [dbg, setDbg] = useState(""); // 一時デバッグ：各要素の実測幅（後で削除）
   // まとめ文章の別窓編集（インラインだと狭くて見づらいため、タップで広いモーダルで編集）
   const [summaryEdit, setSummaryEdit] = useState<null | "headerSummary" | "workItems">(null);
   const [summaryDraft, setSummaryDraft] = useState("");
@@ -125,6 +126,30 @@ export function PhotoReportEditor({
       hintOpen ||
       summaryEdit !== null
   );
+
+  // 一時デバッグ：各要素の実測幅を出す（写真が痩せる原因の切り分け・後で削除）。
+  useEffect(() => {
+    const measure = () => {
+      const w = (sel: string) => {
+        const el = document.querySelector(sel) as HTMLElement | null;
+        if (!el) return "×";
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return `${Math.round(r.width)}(p${cs.paddingLeft}/${cs.paddingRight} m${cs.marginLeft}/${cs.marginRight})`;
+      };
+      setDbg(
+        `win=${window.innerWidth} / main pad=${getComputedStyle(document.querySelector("main")!).padding} / ` +
+          `panel=${w(".panel")} / grid=${w(".photo-grid")} / card=${w(".photo-card")} / ` +
+          `wrap=${w(".annot-wrap")} / img=${w(".annot-img")}`
+      );
+    };
+    const t = setTimeout(measure, 600);
+    window.addEventListener("resize", measure);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
 
   // 未保存の編集があるか（戻る/リロード/離脱の誤操作で内容を失わないためのガード）。
   const dirtyRef = useRef(false);
@@ -752,6 +777,26 @@ export function PhotoReportEditor({
 
   return (
     <section className="panel">
+      {dbg ? (
+        <div
+          className="no-print"
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: "#111",
+            color: "#0f0",
+            font: "11px/1.4 monospace",
+            padding: "6px 8px",
+            zIndex: 9999,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-all"
+          }}
+        >
+          {dbg}
+        </div>
+      ) : null}
       <div className="editor-topbar no-print">
         <h1>写真報告書</h1>
         <button
