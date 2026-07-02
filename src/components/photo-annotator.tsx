@@ -155,8 +155,14 @@ export function PhotoAnnotator({
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
-      // 選択は図形側 onClick、文字は svg onClick（モーダル）で処理＝ここでは描画系のみ。
-      if (tool === "select" || tool === "text") return;
+      // 図形は各図形の onPointerDown(beginMove/beginResize) が stopPropagation するので、
+      // ここに来る＝余白を押した。選択ツールなら「余白押下＝選択解除」（click の e.target 判定は
+      // setPointerCapture 後に SVG を指してしまい選択直後に解除されるため、pointerdown で行う）。
+      if (tool === "select") {
+        setSelectedId(null);
+        return;
+      }
+      if (tool === "text") return;
       e.preventDefault();
       const p = norm(e.clientX, e.clientY);
       svgRef.current?.setPointerCapture(e.pointerId);
@@ -296,6 +302,10 @@ export function PhotoAnnotator({
     if (pts.length === 0) return null;
     const stroke = a.color ?? "#e11d48";
     const selected = !isDraft && a.id === selectedId;
+    // 選択モード（一覧の縮小表示 idle を除く）では、図形の内部（fill:none でも）まで掴めるよう
+    // pointer-events:all にする。これが無いと PC のマウスでは 2.5px の線の上を正確に射抜かない限り
+    // 選択できず「クリックで保持できない」＝今回の不具合の主因（指より細いポインタで顕著）。
+    const selectable = !isDraft && tool === "select" && (!compact || focused);
     const common = {
       stroke,
       strokeWidth: selected ? 4 : 2.5,
@@ -303,11 +313,28 @@ export function PhotoAnnotator({
       vectorEffect: "non-scaling-stroke" as const,
       strokeLinecap: "round" as const,
       strokeLinejoin: "round" as const,
-      onPointerDown:
-        !isDraft && tool === "select"
-          ? (ev: React.PointerEvent) => beginMove(ev, a)
-          : undefined,
-      style: tool === "select" && !isDraft ? { cursor: "move" } : undefined
+      onPointerDown: selectable ? (ev: React.PointerEvent) => beginMove(ev, a) : undefined,
+      style: {
+        pointerEvents: (selectable ? "all" : "none") as "all" | "none",
+        cursor: selectable ? ("move" as const) : undefined
+      }
+    };
+    // 細い線・矢印・手書きは stroke が細く PC で掴みづらいので、透明な太い当たり判定線を重ねる。
+    const hitStroke = (
+      node: "line" | "polyline",
+      geom: { x1?: number; y1?: number; x2?: number; y2?: number; points?: string }
+    ) => {
+      if (!selectable) return null;
+      const p = {
+        stroke: "transparent",
+        strokeWidth: 16,
+        fill: "none" as const,
+        strokeLinecap: "round" as const,
+        strokeLinejoin: "round" as const,
+        style: { pointerEvents: "stroke" as const, cursor: "move" as const },
+        onPointerDown: (ev: React.PointerEvent) => beginMove(ev, a)
+      };
+      return node === "line" ? <line {...p} {...geom} /> : <polyline {...p} points={geom.points} />;
     };
 
     if (a.type === "circle") {
@@ -336,7 +363,12 @@ export function PhotoAnnotator({
     }
     if (a.type === "line") {
       const [s, e] = pts;
-      return <line {...common} x1={s.x} y1={s.y} x2={e.x} y2={e.y} />;
+      return (
+        <>
+          {hitStroke("line", { x1: s.x, y1: s.y, x2: e.x, y2: e.y })}
+          <line {...common} x1={s.x} y1={s.y} x2={e.x} y2={e.y} />
+        </>
+      );
     }
     if (a.type === "arrow") {
       const [s, e] = pts;
@@ -345,15 +377,24 @@ export function PhotoAnnotator({
       const a1 = ang + (Math.PI * 5) / 6;
       const a2 = ang - (Math.PI * 5) / 6;
       return (
-        <g {...common}>
-          <line x1={s.x} y1={s.y} x2={e.x} y2={e.y} />
-          <line x1={e.x} y1={e.y} x2={e.x + L * Math.cos(a1)} y2={e.y + L * Math.sin(a1)} />
-          <line x1={e.x} y1={e.y} x2={e.x + L * Math.cos(a2)} y2={e.y + L * Math.sin(a2)} />
-        </g>
+        <>
+          {hitStroke("line", { x1: s.x, y1: s.y, x2: e.x, y2: e.y })}
+          <g {...common}>
+            <line x1={s.x} y1={s.y} x2={e.x} y2={e.y} />
+            <line x1={e.x} y1={e.y} x2={e.x + L * Math.cos(a1)} y2={e.y + L * Math.sin(a1)} />
+            <line x1={e.x} y1={e.y} x2={e.x + L * Math.cos(a2)} y2={e.y + L * Math.sin(a2)} />
+          </g>
+        </>
       );
     }
     if (a.type === "freehand") {
-      return <polyline {...common} points={pts.map((p) => `${p.x},${p.y}`).join(" ")} />;
+      const ptsStr = pts.map((p) => `${p.x},${p.y}`).join(" ");
+      return (
+        <>
+          {hitStroke("polyline", { points: ptsStr })}
+          <polyline {...common} points={ptsStr} />
+        </>
+      );
     }
     if (a.type === "text") {
       const [s] = pts;
@@ -563,8 +604,8 @@ export function PhotoAnnotator({
                       setTextDraft(norm(e.clientX, e.clientY));
                       return;
                     }
-                    // 余白クリックで選択解除（図形側は stopPropagation 済み）。
-                    if (tool === "select" && e.target === svgRef.current) setSelectedId(null);
+                    // 選択解除は onPointerDown（背景押下）で処理する。ここで e.target を見て解除すると
+                    // setPointerCapture 後の click が SVG を指し、選択直後に解除されてしまう。
                   }
             }
           >
