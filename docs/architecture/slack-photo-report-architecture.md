@@ -165,6 +165,11 @@
 - ✅ **案件ポータル実体化＋PC図形選択の修正（2026-07-02・rev `00060-fnv`→`00061-229`）**：
   - **案件ポータル `/portal?caseId=`（総合窓口・IAP）**：`photo_reports`/`prevention_reports`（`case_id`列）＋`case_deliverables` から案件の成果物を一覧し、各編集面へ deep-link（起動トークンは `signLaunchToken` でアプリがその場採番＝`/report/*` の token 契約は不変）。認可は**単一の門 `resolveCaseAccess(session, caseId)`**（`src/lib/security/case-access.ts`）：裏=staff(IAP)→`scope:"all"` のみ配線、表=capability(署名URL/リング1c)・customer(LINE/メール)は継ぎ目のみ。設計記録＝`../vision/case-portal.md §7.5`。**残＝GAS側で案件トピックに 🗂案件ポータル URLボタン追加（依頼書＝`../handoff/justdb-hub-gas-portal-button.md`・本人deploy）**。
   - **PCで図形をクリック選択できない不具合（rev 00061）**：図形は `fill:none` で当たり判定が2.5pxの線のみ→マウスでは内部クリックが素通り。選択モードで `pointer-events:all`＋細い線/矢印/手書きに**透明な太い当たり判定線（16px）**を重ね本体全体で掴めるように。「余白で選択解除」を click（`e.target` 判定＝setPointerCapture 後にSVGを指し選択直後に解除される競合）から**背景 pointerdown** へ移設。
+- ✅ **ポータル＝写真報告書の管理面＋正本指定＋Slack動線1本化（2026-07-02 後半・rev `00062-vjs`→`00065系`）**：
+  - **試験運用の利用者限定**：Slack の URL ボタンは GAS では止められない→アプリ側の門（`resolveCaseAccess` staff 分岐）にサーフェス別 allowlist（env `PORTAL_ALLOWED_EMAILS` / `REPORT_DIRECT_ALLOWED_EMAILS`・**スペース区切り**）。スレッド内 `pr_*` value ボタンは従来どおり GAS Script Property `PHOTO_REPORT_TESTERS`（SlackID）。
+  - **Slack ボタン1本化**：案件トピック＝「📋 報告書」1つ→**案件ポータル `/portal?caseId=&topFolderId=`** 固定リンク（旧 `pr_menu` は同URLのエフェメラル案内・種類選択メニュー廃止）。
+  - **ポータル改修＝写真報告書だけ**（見積・防除の導線撤去）：日付フォルダごとの一覧（フォルダ名＋最終更新）／**正本指定**（「正本にする」→ 案件フォルダ `_ai/canonical-report.json`・`src/lib/case-canonical.ts`）／**新規作成（本日分）**（`/report/photo?caseId=&topFolderId=&new=1`＝本日フォルダ find-or-create→サイト内アップロード。**Slack/Drive 写真先入れの動線は廃止**）。
+  - **AI の前回参照を一意化**：worker が生成時に `_ai/canonical-report.json` → 正本の現在版 `report_json` の骨子（まとめ/作業内容/見出し）を `prev-report-canonical.md` として同梱（`readCanonicalPrevReport`・summary モードも同様）。**それまで「前の報告書」は次の生成にほぼ流用されていなかった**（digest は案件フォルダ直下 PDF のみ読み、`写真報告書.pdf` は日付フォルダ内＝不可視）。**worker 反映は本人（VM clone+cp+restart）**。
 
 ## 11. 決定ログ（要点）
 - **D-AIDATA**：顧客データは Team/API（閉空間）へなら渡してよい。

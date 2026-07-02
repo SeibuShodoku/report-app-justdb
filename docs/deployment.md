@@ -40,8 +40,8 @@
 
 ## 秘密の置き場
 - **Cloud Run env**（report-app サーバー）：`GOOGLE_CLIENT_ID/SECRET`・`GOOGLE_DRIVE_REFRESH_TOKEN`・`SUPABASE_*`・`REPORT_LINK_SECRET`・`DRIVE_PROXY_SERVER_SECRET`（`--env-vars-file` で投入・ソースに焼かない）
-  - `PORTAL_ALLOWED_EMAILS`（秘密ではない・2026-07-02）＝案件ポータル `/portal` の試験運用 allowlist。**スペース区切り**の社内メール（カンマは gcloud の `--update-env-vars` 区切りと衝突するので使わない）。未設定なら IAP のみが門（社内全員）。判定は `security/case-access.ts` の staff 分岐。
-  - `REPORT_DIRECT_ALLOWED_EMAILS`（同上・2026-07-02）＝Slack 📋報告書ボタンの直リンク `/report/photo?caseId=` の試験運用 allowlist（サーフェス別にポータルと別リスト）。書式・既定はポータルと同じ。
+  - `PORTAL_ALLOWED_EMAILS`（秘密ではない・2026-07-02）＝案件ポータル `/portal` の試験運用 allowlist。**スペース区切り**の社内メール（カンマは gcloud の `--update-env-vars` 区切りと衝突するので使わない）。未設定なら IAP のみが門（社内全員）。判定は `security/case-access.ts` の staff 分岐。**現在4名（石橋/堀上/岡野/杉山）＝Slack 📋報告書ボタンの着地先**。
+  - `REPORT_DIRECT_ALLOWED_EMAILS`（同上・2026-07-02）＝報告書直リンク `/report/photo?caseId=` の試験運用 allowlist（サーフェス別にポータルと別リスト・ポータルの新規作成リンクもここを通る）。書式・既定はポータルと同じ。現在4名（同上）。
 - **ローカル開発**：`.env.local`（gitignore）
 - **VM ワーカー**：`SUPABASE_*`・`GOOGLE_CLIENT_ID/SECRET`・`GOOGLE_DRIVE_REFRESH_TOKEN`（mgmt-strat RW＝Drive 直読み/直書き）・`CLAUDE_MODEL`/`CLAUDE_EFFORT`（既定 Opus 4.8/medium）・`MAX_*`/`POLL_INTERVAL_MS` 等（全一覧＝`worker/README.md`）。**Option A のため `report-worker-iap` SA鍵・`REPORT_APP_BASE` は不要**（旧 Option B の名残）
 

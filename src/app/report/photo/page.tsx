@@ -35,6 +35,7 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
   const token = pickParam(sp.token)?.trim();
   const caseIdParam = pickParam(sp.caseId)?.trim();
   const topFolderId = pickParam(sp.topFolderId)?.trim();
+  const forceNew = pickParam(sp.new) === "1"; // ポータル「新規作成」＝最新解決をスキップし本日フォルダへ
 
   // 報告書直リンク入口（Slack 📋ボタン・暫定）: /report/photo?caseId=…&topFolderId=… で着地。
   // 報告書は日付フォルダ単位の管理＝「その案件の報告書」は一意でないため、IAP 裏で caseId を
@@ -54,8 +55,10 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
         </main>
       );
     }
-    const href = await latestPhotoReportHref(caseIdParam);
-    if (href) redirect(href);
+    if (!forceNew) {
+      const href = await latestPhotoReportHref(caseIdParam);
+      if (href) redirect(href);
+    }
 
     if (topFolderId && driveWriteConfigured()) {
       // JST の今日で「写真_YYYYMMDD」（GAS pr_start と同じ命名・find-or-create で冪等）。

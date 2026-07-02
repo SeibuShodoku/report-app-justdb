@@ -117,7 +117,19 @@ Slack の案件トピックの入口を「報告書」単発から**総合窓口
 - **在庫の引き先**：`photo_reports`/`prevention_reports`（`case_id` 列・現在版）＋ `case_deliverables`（確定索引）。新規作成は従来どおり Slack 起点（写真投稿→フォルダ）で、ポータルは既存成果物のナビゲーション。
 - **GAS 側（別リポ・本人deploy）**：案件トピックの「報告書」ボタンの向け先を `<BASE>/portal?caseId=<案件ID>` の固定リンクへ差し替える小変更。URL発行（launch token 直リンク）は個別ディープリンクとして併存可。
 - **試験運用の利用者限定（2026-07-02）**：Slack のポータルボタンは **URL ボタン＝GAS ではクリックを止められない**（ブラウザが開いた後に ACK が飛ぶだけ）ため、絞り込みは**アプリ側の門**で行う。env `PORTAL_ALLOWED_EMAILS`（スペース区切りメール）が設定されている間、`resolveCaseAccess` の staff 分岐が IAP メールを allowlist 照合（現在＝石橋/堀上/岡野の3名）。未設定に戻せば IAP のみ（社内全員）。一方 **スレッド内ボタン（`pr_create`等の value ボタン）の利用者制限は GAS の Script Property `PHOTO_REPORT_TESTERS`**（Slack userId・カンマ/空白区切り・コード変更不要で即反映）が既存の門。
-- **📋 報告書＝直リンク化（2026-07-02・暫定ボタン）**：トピックの「📋 報告書」も URL ボタンにし、`/report/photo?caseId=…&topFolderId=…` へ直行。**報告書は日付フォルダ単位の管理＝「その案件の報告書」は一意でない**ため、アプリが IAP 裏で caseId をセレクタに **`photo_reports` の最新 1 件へ解決**し、`signLaunchToken` で token を採番して正規URL（`folderId&token`）へ転送する（`latestPhotoReportHref`）。**未作成の案件は `topFolderId`（案件親フォルダ・GAS が URL に埋め込む）配下に「写真_YYYYMMDD」をアプリが find-or-create → 空の編集面（アプリ内アップローダ）に着地＝写真の取り込みはサイトで行う（Slack/Drive 先入れの動線は廃止）**。利用者限定はサーフェス別 env `REPORT_DIRECT_ALLOWED_EMAILS`（現在＝上記3名＋杉山）。このボタンは**ポータル前の暫定**＝いずれ廃止か別用途（入口はポータルに集約する北極星は不変）。旧投稿済みトピックの `pr_menu` は**同じ直リンクをエフェメラルで返す**互換に変更（種類選択メニュー廃止）。既知の穴＝**報告書が既にある案件で「別日の新規報告書」を作る入口が無い**（直リンクは常に最新へ・ポータル Step2 で解く）。
+- **📋 報告書＝ポータル1本化（2026-07-02 後半・同日3転）**：直リンク方式を経て、**Slack のボタンは
+  「📋 報告書」1つ＝案件ポータル `/portal?caseId=…&topFolderId=…` への固定リンク**に集約
+  （🗂ポータル/📋直リンクの2ボタンを1本化。旧投稿の `pr_menu` は同URLのエフェメラル案内）。
+  ポータルは**写真報告書だけの管理面**に改修（見積・防除の導線は撤去）：
+  - **一覧**＝日付フォルダ（写真_YYYYMMDD）ごとの報告書（フォルダ名＋最終更新・編集面へ deep-link）。
+  - **正本指定**＝各行の「正本にする」→ 案件フォルダ `_ai/canonical-report.json` に保存
+    （`src/lib/case-canonical.ts`・Supabase migration 不要）。**AI が次の報告書を作る時、
+    正本の骨子（まとめ/作業内容/見出し）を `prev-report-canonical.md` として同梱し参照**
+    ＝「前の報告書のどれを読むべきか」を人の指定で一意化（worker `readCanonicalPrevReport`）。
+  - **新規作成（本日分）**＝`/report/photo?caseId=&topFolderId=&new=1`（`new=1` で最新解決をスキップし
+    本日フォルダを find-or-create→サイト内アップロード）。これで「別日の新規報告書」の穴も塞がった。
+  - 直リンク入口 `/report/photo?caseId=` 自体は残置（旧エフェメラルURL互換・`REPORT_DIRECT_ALLOWED_EMAILS`）。
+  - ボタン着地がポータルになったため **PORTAL_ALLOWED_EMAILS は4名**（石橋/堀上/岡野/杉山）に拡張。
 
 ## 8. 横断制約（ブロッカーではなく設計前提）
 

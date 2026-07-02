@@ -1622,3 +1622,43 @@ button.btn-secondary {
 .portal-row--static {
   background: #fafafa;
 }
+/* 行内の副操作（正本にする）：リンク行の右に小ボタンを添える */
+.portal-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.portal-row .portal-link {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.portal-aside {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  margin: 0;
+}
+.portal-side-btn {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.portal-side-btn:hover,
+.portal-side-btn:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #f0fdfa;
+  outline: none;
+}
+.portal-hint {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: #b45309;
+}

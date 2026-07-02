@@ -250,6 +250,47 @@ async function readCaseDigest(folderId) {
   return null;
 }
 
+// --- 正本報告書（人がポータルで指定・_ai/canonical-report.json） ---
+/**
+ * 案件フォルダ（写真フォルダの親）の _ai/canonical-report.json を読み、
+ * **今回とは別フォルダ**の正本があればその現在版 report_json を返す（無ければ null）。
+ * 「AIが前の報告書を読む時にどれを読むべきか」を人の指定で一意にする。
+ * 書き手＝report-app ポータル（src/lib/case-canonical.ts）。
+ */
+async function readCanonicalPrevReport(folderId) {
+  try {
+    const parent = await getParentId(folderId);
+    if (!parent) return null;
+    const ai = await findSubfolderRO(parent, AI_FOLDER_NAME);
+    if (!ai) return null;
+    const txt = await readTextByNameRO(ai, "canonical-report.json");
+    if (!txt) return null;
+    const c = JSON.parse(txt);
+    if (!c?.folderId || c.folderId === folderId) return null; // 自分自身が正本＝前回参照は不要
+    const rows = await sb(
+      "GET",
+      `photo_reports?folder_id=eq.${encodeURIComponent(c.folderId)}&select=report_json&limit=1`
+    );
+    return rows?.[0]?.report_json ?? null;
+  } catch {
+    return null; // 正本は補助文脈＝読めなくても生成は止めない
+  }
+}
+
+/** 正本 report_json → AI に渡す要約 Markdown（トークン節約のため全文でなく骨子だけ）。 */
+function canonicalPrevMd(rj) {
+  const lines = ["# 前回の正本報告書（人が指定した基準・参考用）"];
+  if (rj.headerSummary) lines.push("", "## まとめ", String(rj.headerSummary));
+  if (Array.isArray(rj.workItems) && rj.workItems.length) {
+    lines.push("", "## 作業内容", ...rj.workItems.map((w) => `- ${w}`));
+  }
+  const heads = (Array.isArray(rj.photoItems) ? rj.photoItems : [])
+    .map((p) => p?.heading)
+    .filter(Boolean);
+  if (heads.length) lines.push("", "## 写真見出し", ...heads.map((h) => `- ${h}`));
+  return lines.join("\n");
+}
+
 // --- Drive 書込み（ダイジェスト直書き・RW token / Option A） ---
 // digest.md・slack-summary-history.md は AI 所有の生成物。report-app「口」と同じ _ai/ に同じ形式で書く
 //（口は閲覧/他consumer用に存置。書き手が二者になるがファイルは upsert で冪等）。
@@ -465,16 +506,20 @@ function settingsLines(s) {
   return { lines, kind };
 }
 
-function buildPrompt(ctx, docFileNames, hasDigest, settings) {
+function buildPrompt(ctx, docFileNames, hasDigest, settings, hasPrevCanonical) {
   const { lines: setLines, kind } = settingsLines(settings);
   const docLine = hasDigest
     ? "このディレクトリの **case-digest.md** に案件の時系列ダイジェスト（引き合い・調査・見積・経緯の要約）があります。**まずそれを読み、実際の作業内容（対象生物・対策の種類）を正確に把握**してから写真を説明してください。"
     : docFileNames.length
       ? `このディレクトリには現場写真(画像)に加え、案件書類のPDF（${docFileNames.join(" / ")}）があります。**まず書類を読み、実際の作業内容（対象生物・対策の種類など）を正確に把握**してから写真を説明してください。`
       : "案件書類は無いので、フォルダ名と写真から判断してください。";
+  const prevLine = hasPrevCanonical
+    ? "**prev-report-canonical.md** は、この案件で人が「正本」に指定した前回の報告書の骨子です。継続案件として、対象生物・薬剤・場所の呼び方・文体をこれに揃えてください（ただし**今回の写真と書類が事実の正**。前回の内容を今回やったことにしない）。"
+    : "";
   return [
     `このディレクトリにある画像は、害虫防除（${kind}）の現場写真です。これから写真報告書の下書きを作ります。`,
     docLine,
+    prevLine,
     `参考フォルダ名: 親=「${ctx.parentName}」 / 当該=「${ctx.folderName}」。`,
     "【報告書の方針】",
     ...setLines,
@@ -488,22 +533,26 @@ function buildPrompt(ctx, docFileNames, hasDigest, settings) {
     `・workItems は実施した${kind}内容を **数項目に集約** した配列（各項目1文・場所＋処理を簡潔に。例『101号室・102号室・103号室の床下に木部剤・土壌剤を散布処理』）。最終ページの一覧に使う。`,
     "出力は **このディレクトリに report.json を1つ書き出す**こと。形式は厳密に次のJSONのみ:",
     '{ "coverFileId": "<代表写真のfileId>", "headerSummary": "…", "workItems": ["…","…"], "photoItems": [ { "fileId": "<画像ファイル名から拡張子を除いた部分>", "heading": "…" } ] }',
-    "fileId は各**画像**ファイル名の拡張子を除いた部分（例 1AbC.jpg → 1AbC）。case-digest.md / context-*.pdf は文脈用で報告対象ではない。JSON以外の文章は report.json に書かないこと。"
-  ].join("\n");
+    "fileId は各**画像**ファイル名の拡張子を除いた部分（例 1AbC.jpg → 1AbC）。case-digest.md / context-*.pdf / prev-report-canonical.md は文脈用で報告対象ではない。JSON以外の文章は report.json に書かないこと。"
+  ].filter(Boolean).join("\n");
 }
 
 /** まとめだけAI生成（mode=summary）のプロンプト。写真は読まず、見出し＋設定＋文脈から概要・内容を書く。 */
-function buildSummaryPrompt(headings, settings, hasDigest) {
+function buildSummaryPrompt(headings, settings, hasDigest, hasPrevCanonical) {
   const { lines: setLines, kind } = settingsLines(settings);
   const docLine = hasDigest
     ? "このディレクトリの **case-digest.md** に案件の時系列ダイジェストがあります。まずそれを読み、実際の作業内容（対象生物・対策の種類）を把握してください。"
     : "案件書類はありません。見出しと方針から判断してください。";
+  const prevLine = hasPrevCanonical
+    ? "**prev-report-canonical.md** は、人が「正本」に指定した前回報告書の骨子です。用語・文体の基準として参照してください（今回の見出しが事実の正）。"
+    : "";
   const headingLines = headings.length
     ? headings.map((h, i) => `${i + 1}. ${h}`).join("\n")
     : "(見出し未入力)";
   return [
     `これは害虫防除（${kind}）の写真報告書の「まとめ」だけを作る作業です。**写真は見ません**。`,
     docLine,
+    prevLine,
     "【各写真の見出し一覧】（これが実施内容の根拠。ここから概要と内容を組み立てる）",
     headingLines,
     "【方針】",
@@ -515,7 +564,7 @@ function buildSummaryPrompt(headings, settings, hasDigest) {
     "出力は **このディレクトリに report.json を1つ書き出す**こと。形式は厳密に次のJSONのみ:",
     '{ "headerSummary": "…", "workItems": ["…","…"] }',
     "JSON以外の文章は report.json に書かないこと。"
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 /**
@@ -620,8 +669,12 @@ async function processJob(job) {
       }
     }
 
+    // 正本指定（人がポータルで指定した前回の基準報告書）があれば骨子を同梱。
+    const prevCanonical = await readCanonicalPrevReport(job.folder_id);
+    if (prevCanonical) writeFileSync(join(dir, "prev-report-canonical.md"), canonicalPrevMd(prevCanonical));
+
     const settings = await getSettings(job.folder_id);
-    const { stdout } = await runClaude(dir, buildPrompt(ctx, docNames, !!digest, settings));
+    const { stdout } = await runClaude(dir, buildPrompt(ctx, docNames, !!digest, settings, !!prevCanonical));
 
     // 通常は claude が report.json を書く。書かれていない場合:
     //  ・stdout に JSON があればそれを採用（claude がファイルでなく出力に返した時の保険）
@@ -686,9 +739,11 @@ async function processSummaryJob(job) {
 
     const digest = await readCaseDigest(job.folder_id);
     if (digest) writeFileSync(join(dir, "case-digest.md"), digest);
+    const prevCanonical = await readCanonicalPrevReport(job.folder_id);
+    if (prevCanonical) writeFileSync(join(dir, "prev-report-canonical.md"), canonicalPrevMd(prevCanonical));
     const settings = await getSettings(job.folder_id);
 
-    const { stdout } = await runClaude(dir, buildSummaryPrompt(headings, settings, !!digest));
+    const { stdout } = await runClaude(dir, buildSummaryPrompt(headings, settings, !!digest, !!prevCanonical));
 
     const reportPath = join(dir, "report.json");
     let raw;

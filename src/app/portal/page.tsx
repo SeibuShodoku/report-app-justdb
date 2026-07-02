@@ -4,6 +4,7 @@ import { iapUserEmail } from "@/lib/security/iap-user";
 import { resolveCaseAccess } from "@/lib/security/case-access";
 import { loadCasePortal, type PortalReport } from "@/lib/case-portal";
 import type { DeliverableEntry } from "@/lib/case-deliverables";
+import { setCanonicalAction } from "./actions";
 
 // Drive/Supabase 読取・node:crypto（token 採番）を行うため Node ランタイム固定・毎回最新。
 export const runtime = "nodejs";
@@ -36,16 +37,28 @@ function fmt(iso: string | null | undefined): string {
   }
 }
 
-function ReportRow({ label, icon, r }: { label: string; icon: string; r: PortalReport }) {
+function ReportRow({
+  r,
+  caseId,
+  topFolderId
+}: {
+  r: PortalReport;
+  caseId: string;
+  topFolderId: string | null;
+}) {
   const when = fmt(r.generatedAt);
+  const label = r.folderName ?? `写真報告書（…${r.folderId.slice(-6)}）`;
   return (
     <li className="portal-row">
       <Link href={r.href} className="portal-link">
         <span className="portal-ic" aria-hidden>
-          {icon}
+          📷
         </span>
         <span className="portal-body">
-          <span className="portal-title">{label}</span>
+          <span className="portal-title">
+            {label}
+            {r.isCanonical && <span className="portal-tag portal-tag--ok">正本</span>}
+          </span>
           <span className="portal-sub">
             {when ? `最終更新 ${when}` : "更新日時なし"} ・ 編集面を開く
           </span>
@@ -54,20 +67,36 @@ function ReportRow({ label, icon, r }: { label: string; icon: string; r: PortalR
           ›
         </span>
       </Link>
+      {!r.isCanonical && (
+        <form action={setCanonicalAction} className="portal-aside">
+          <input type="hidden" name="caseId" value={caseId} />
+          <input type="hidden" name="folderId" value={r.folderId} />
+          <input type="hidden" name="topFolderId" value={topFolderId ?? ""} />
+          <button type="submit" className="portal-side-btn" title="この報告書を正本にする（AIが次回参照する基準）">
+            正本にする
+          </button>
+        </form>
+      )}
     </li>
   );
 }
 
 /**
- * 案件ポータル（総合窓口・社内/IAP）。Slack の案件トピックからは固定リンク
- * `/portal?caseId=…` で入る（URL発行＝launch token とは別経路）。
+ * 案件ポータル（総合窓口・社内/IAP）＝**写真報告書の管理面**。
+ * Slack の案件トピックの「📋 報告書」固定リンク `/portal?caseId=…&topFolderId=…` で入る。
  *
- * 認可は必ず `resolveCaseAccess` を通す（caseId はセレクタ・門は IAP）。裏＝全成果物、
- * 表（将来）＝確定・顧客可視のみ。仕様: docs/vision/case-portal.md §4・§8。
+ * - 一覧＝日付フォルダ（写真_YYYYMMDD）ごとの報告書。各行から編集面へ。
+ * - **正本**＝人が1つ指定（案件フォルダ `_ai/canonical-report.json`）。AI が次の報告書を
+ *   作る時に「前回の基準」として読む＝どれを読むべきか迷わない。
+ * - 新規作成＝本日分の日付フォルダを find-or-create してサイト内アップロードへ。
+ *
+ * 認可は必ず `resolveCaseAccess` を通す（caseId はセレクタ・門は IAP＋試験運用 allowlist）。
+ * 仕様: docs/vision/case-portal.md §7.5。
  */
 export default async function CasePortalPage({ searchParams }: PageProps) {
   const sp = (await searchParams) ?? {};
   const caseId = pickParam(sp.caseId)?.trim();
+  const topFolderIdParam = pickParam(sp.topFolderId)?.trim() || null;
 
   if (!caseId) {
     return (
@@ -84,7 +113,7 @@ export default async function CasePortalPage({ searchParams }: PageProps) {
   }
 
   const email = iapUserEmail(await headers());
-  const access = resolveCaseAccess({ kind: "staff", email }, caseId);
+  const access = resolveCaseAccess({ kind: "staff", email }, caseId, "portal");
   if (!access.allowed) {
     return (
       <main>
@@ -99,16 +128,15 @@ export default async function CasePortalPage({ searchParams }: PageProps) {
   let portal: Awaited<ReturnType<typeof loadCasePortal>> | null = null;
   let loadError: string | null = null;
   try {
-    portal = await loadCasePortal(caseId, access.scope);
+    portal = await loadCasePortal(caseId, access.scope, topFolderIdParam);
   } catch (e) {
     loadError = e instanceof Error ? e.message : "案件データの取得に失敗しました。";
   }
 
-  const hasAny =
-    !!portal &&
-    (portal.photoReports.length > 0 ||
-      portal.preventionReports.length > 0 ||
-      portal.confirmed.length > 0);
+  const topFolderId = portal?.caseFolderId ?? topFolderIdParam;
+  const newReportHref = topFolderId
+    ? `/report/photo?caseId=${encodeURIComponent(caseId)}&topFolderId=${encodeURIComponent(topFolderId)}&new=1`
+    : null;
 
   return (
     <main>
@@ -130,43 +158,38 @@ export default async function CasePortalPage({ searchParams }: PageProps) {
             <section className="portal-group">
               <h2 className="portal-group-h">📷 写真報告書</h2>
               {portal.photoReports.length > 0 ? (
-                <ul className="portal-list">
-                  {portal.photoReports.map((r) => (
-                    <ReportRow key={r.folderId} label="写真報告書" icon="📷" r={r} />
-                  ))}
-                </ul>
+                <>
+                  <ul className="portal-list">
+                    {portal.photoReports.map((r) => (
+                      <ReportRow key={r.folderId} r={r} caseId={caseId} topFolderId={topFolderId} />
+                    ))}
+                  </ul>
+                  {!portal.canonicalFolderId && portal.photoReports.length > 1 && (
+                    <p className="portal-hint">
+                      ⚠️ 正本が未指定です。「正本にする」で基準の報告書を決めると、AI
+                      が次の報告書を作る時にそれを参照します。
+                    </p>
+                  )}
+                </>
               ) : (
-                <p className="portal-empty">まだありません。</p>
+                <p className="portal-empty">まだありません。下の「新規作成」から始められます。</p>
               )}
             </section>
 
             <section className="portal-group">
-              <h2 className="portal-group-h">🧪 防除作業報告書</h2>
-              {portal.preventionReports.length > 0 ? (
-                <ul className="portal-list">
-                  {portal.preventionReports.map((r) => (
-                    <ReportRow key={r.folderId} label="防除作業報告書" icon="🧪" r={r} />
-                  ))}
-                </ul>
-              ) : (
-                <p className="portal-empty">まだありません。</p>
-              )}
-            </section>
-
-            <section className="portal-group">
-              <h2 className="portal-group-h">💴 見積書</h2>
-              {portal.estimateHref ? (
+              <h2 className="portal-group-h">➕ 新規作成</h2>
+              {newReportHref ? (
                 <ul className="portal-list">
                   <li className="portal-row">
-                    <Link href={portal.estimateHref} className="portal-link">
+                    <Link href={newReportHref} className="portal-link">
                       <span className="portal-ic" aria-hidden>
-                        💴
+                        📸
                       </span>
                       <span className="portal-body">
-                        <span className="portal-title">
-                          見積作成 <span className="portal-tag">試作</span>
+                        <span className="portal-title">本日分の写真報告書を作成</span>
+                        <span className="portal-sub">
+                          写真_本日 フォルダを用意 → サイト上で写真を取り込んで AI 作成
                         </span>
-                        <span className="portal-sub">原価積算・ライブ計算（案件束縛は配線中）</span>
                       </span>
                       <span className="portal-chev" aria-hidden>
                         ›
@@ -175,7 +198,10 @@ export default async function CasePortalPage({ searchParams }: PageProps) {
                   </li>
                 </ul>
               ) : (
-                <p className="portal-empty">—</p>
+                <p className="portal-empty">
+                  案件フォルダが特定できないため新規作成できません。Slack の「📋 報告書」ボタンから
+                  開き直してください。
+                </p>
               )}
             </section>
 
@@ -190,8 +216,7 @@ export default async function CasePortalPage({ searchParams }: PageProps) {
                       </span>
                       <span className="portal-body">
                         <span className="portal-title">
-                          {d.title || (d.report_type === "photo" ? "写真報告書" : "防除作業報告書")}{" "}
-                          <span className="portal-tag">v{d.version}</span>
+                          {d.title || "写真報告書"} <span className="portal-tag">v{d.version}</span>
                           {d.customer_visible && <span className="portal-tag portal-tag--ok">顧客可視</span>}
                         </span>
                         <span className="portal-sub">
@@ -203,13 +228,6 @@ export default async function CasePortalPage({ searchParams }: PageProps) {
                   ))}
                 </ul>
               </section>
-            )}
-
-            {!hasAny && portal.supabaseReady && (
-              <p className="notice">
-                この案件にはまだ成果物がありません。新規の写真報告書は Slack
-                の案件スレッドから写真を投稿して開始します。
-              </p>
             )}
           </>
         )}
