@@ -1519,3 +1519,106 @@ button.btn-secondary {
     margin-top: 6px;
   }
 }
+
+/* ===== 案件ポータル（/portal・総合窓口） ===== */
+.panel.portal {
+  max-width: 640px;
+}
+.portal-head {
+  margin-bottom: 8px;
+}
+.portal-caseid {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.portal-caseid code {
+  color: var(--text);
+}
+.portal-group {
+  margin-top: 18px;
+}
+.portal-group-h {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.portal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.portal-row {
+  margin: 0;
+}
+.portal-link,
+.portal-row--static {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+}
+.portal-link {
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.portal-link:hover,
+.portal-link:focus-visible {
+  border-color: var(--accent);
+  background: #f0fdfa;
+  outline: none;
+}
+.portal-ic {
+  font-size: 1.4rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+.portal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.portal-title {
+  font-weight: 600;
+}
+.portal-sub {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.portal-chev {
+  flex: 0 0 auto;
+  font-size: 1.5rem;
+  color: var(--muted);
+}
+.portal-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.portal-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #374151;
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.portal-tag--ok {
+  background: #ccfbf1;
+  color: var(--accent);
+}
+.portal-row--static {
+  background: #fafafa;
+}

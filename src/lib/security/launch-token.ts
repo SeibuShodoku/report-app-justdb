@@ -30,6 +30,32 @@ function fromBase64Url(value: string): Buffer {
   return Buffer.from(value, "base64url");
 }
 
+/** 内部ポータル等が自前でリンクを発行するための既定有効期限（秒）。IAP内で使う短命トークン。 */
+const DEFAULT_LAUNCH_TTL_SECONDS = 12 * 60 * 60; // 12h
+
+/**
+ * 起動トークンを採番する（**サーバー専用**・`REPORT_LINK_SECRET` を使う）。
+ *
+ * 用途：IAP 配下の内部ポータル（`/portal`）が `caseId` から各編集面
+ * （`/report/photo` 等・token 必須）へ deep-link する際に、その場でトークンを発行する。
+ * これにより `/report/photo` 側の「token＝フォルダ許可のケイパビリティ」という契約を変えずに、
+ * ポータルを“信頼できる発行者”として合流させられる（門は IAP・token は短命）。
+ *
+ * @param payload `exp` は省略可（省略時 now + ttlSeconds）
+ */
+export function signLaunchToken(
+  payload: Omit<LaunchTokenPayload, "exp"> & { exp?: number },
+  ttlSeconds = DEFAULT_LAUNCH_TTL_SECONDS
+): string {
+  const exp =
+    payload.exp ?? Math.floor(Date.now() / 1000) + Math.max(1, Math.floor(ttlSeconds));
+  const full = launchTokenPayloadSchema.parse({ ...payload, exp });
+  const secret = getSecret();
+  const encodedPayload = Buffer.from(JSON.stringify(full), "utf-8").toString("base64url");
+  const signature = createHmac("sha256", secret).update(encodedPayload).digest("base64url");
+  return `${encodedPayload}.${signature}`;
+}
+
 /**
  * 起動トークン文字列を検証し、ペイロードを返す。
  *

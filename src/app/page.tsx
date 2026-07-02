@@ -9,10 +9,10 @@ export default function HomePage() {
     <main>
       <section className="panel">
         <h1>報告書作成アプリ</h1>
-        <p>JUST.DBのアプリリンクからアクセスしてください。</p>
+        <p>Slack の案件トピック（総合窓口）または JUST.DB のアプリリンクからアクセスしてください。</p>
         <p className="notice">
-          開発時は
-          <Link href="/report/new?caseId=DEMO001&token=replace-token">こちら</Link>
+          開発時は案件ポータル
+          <Link href="/portal?caseId=DEMO001">/portal?caseId=DEMO001</Link>
           から確認できます。
         </p>
       </section>
