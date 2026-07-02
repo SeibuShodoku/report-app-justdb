@@ -16,6 +16,9 @@
 | ワーカー用SA `report-worker-iap` | `seibu-dispatch-poc-tky` | 権限は **`iap.httpsResourceAccessor` のみ**（report-app への“通行証”）。**旧 Option B 用・現在未使用**（Option A＝worker が Drive 直書きで IAP 越え不要・D-DIGEST 項5） |
 | Claude VM（AIワーカー実行） | **`seibot-proxy`**（別プロジェクト） | 汎用エージェントを顧客データPJから分離。**Option A 以降は mgmt-strat の Drive OAuth（`GOOGLE_DRIVE_REFRESH_TOKEN`＝RW）を保持し、Drive を直読み／直書き**（`_ai/digest.md` 等）。IAP は越えない。**worker 実体＝`/mnt/claude-data/projects/photo-report-worker/`（git checkout ではなくファイルコピー＝`git pull` 不可。更新は VM で `git clone --depth 1 git@github.com:SeibuShodoku/report-app-justdb.git` → `worker/photo-report-worker.mjs` を cp → `systemctl restart photo-report-worker`）。Claude 週次上限時は `CLAUDE_CONFIG_DIR_FALLBACK=~/.claude-acc2`(ishibashi) へ無言フォールバック（worker/README.md）** |
 | アプリのコード | GitHub `SeibuShodoku/report-app-justdb` | — |
+| 写真報告ジョブ `photo_report_jobs` | Supabase | `mode` 列（`full`/`summary`）で全生成／まとめだけ生成を分岐。追加 migration＝`docs/supabase/migrations/20260701120000_add_mode_to_photo_report_jobs.sql`（**本人がSQL適用**）。worker は `mode=summary` を `processSummaryJob`（写真DLなし・概要/内容のみ差替）で処理。 |
+
+> **写真報告書ページの HTTP キャッシュ**：`/report/*` は `Cache-Control: no-store`（`next.config.ts` の headers()）。Slack/Gmail のアプリ内ブラウザが古い HTML＝古い CSS を握り、レイアウト崩れが直らない問題への対策。静的アセットは内容ハッシュ名なので長期キャッシュのまま。
 
 ## IAP アクセスモデル
 - `roles/iap.httpsResourceAccessor` を付与済み：

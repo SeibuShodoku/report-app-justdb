@@ -154,6 +154,14 @@
   - **AIボタン文言**：`hasStoredReport` で「AIで作成（初回）/再作成（既存）」を出し分け。
   - **アカウント・フォールバック（VM worker・実機検証済）**：mgmt の Claude 週次上限時に**無言で2nd(ishibashi)アカウントへ切替**（`CLAUDE_CONFIG_DIR`方式）。報告書/ダイジェスト共通。詳細＝`../../[memory]` / `worker/README.md`。
   - **Slack「⚙️設定」のURL導線**：hub-gas `pr_handleSettings_` が本人専用URLを発行（本人が手動デプロイ済）。
+- ✅ **編集面の大刷新＝現場で好評（2026-07-02・rev `report-app-justdb-00059-tzs`）**：
+  - **注記の集中モード＋図形編集**：写真タップで全画面編集（`photo-annotator.tsx` compact/`annot--focus`）。図形の**移動（ドラッグ）・2点図形の端点リサイズ・破線選択フレーム**・選択色をパレット同期・文字は追加直後に選択して置き直し可。1ドラッグ=1 undo。見出し入力も拡大窓の中へ。
+  - **写真管理（採用/不採用トグル）**：`写真管理` モーダルで**フォルダ全写真をサムネ＋採用/不採用トグル**＋「Googleドライブに取り込む」。**除外は非破壊**＝`photoReportDraftSchema.excludedFileIds` に保存し `overlayReport` で復元、**worker が人の除外を保持＋除外写真をAIに見せない**（見出し無し/サブスク節約）。
+  - **表紙は独立1枚**：表紙に選んだ写真は**本文（②）グリッドから除外**（重複しない）。表紙サムネ タップで選び直し。
+  - **まとめだけAI生成（軽量・写真を読まない）**：`photo_report_jobs.mode`（`full`/`summary`・migration `20260701120000_add_mode_to_photo_report_jobs.sql`）。`mode=summary` は worker が**見出し＋設定＋digest文脈のみ**から概要/内容を生成し**その2項目だけ差し替え**（`processSummaryJob`）。編集面は保存→投入→ポーリングで概要/内容だけ反映（全体再読込しない）。生成中は該当欄ロック。
+  - **PDF＝Driveへ保存**：`/api/photo-report/pdf?save=1` が案件フォルダへ `写真報告書.pdf` を upsert（`drive-write.upsertBinaryFile`）。**プレビュー＝`?inline=1`**（iPhone可）＋押下時に未保存なら保存してから開く＝「現在の内容」を表示。
+  - **UI集約・固定**：上部ボタンを **☰ メニュー**（別窓）に集約、手順は**ヒント**別窓。**段積み固定ヘッダ**（上部バー→アラート→②見出し＝写真管理/並べ替え、`--topbar-h`/`--alert-h` を実測してオフセット）。版管理/写真管理の**閉じるを最上部固定**。全生成完了時は**「最新版を読み込む」ボタン＋タブ復帰で自動reload**（背面タブで setTimeout が保留される問題対策）。実エラーを編集面に表示（`getGenerationStatus` が error も返す）。手動再生成で `attempts` リセット（再試行上限ロック解消）。
+  - **一覧グリッド＝2列・端末非依存で写真最大化**：写真セルは `aspect-ratio:4/3`＋`object-fit:cover` で**全カード同じ高さ**、`.photo-grid` は列間最小＋`margin-inline` でパネル余白の外まで拡張。**写真が痩せる真因＝`<figure>.photo-card` の既定 `margin:0 40px` と `main{place-items:center}` によるパネル幅収縮**を実測で特定し `.photo-card{margin:0}`＋`main{grid-template-columns:minmax(0,1fr)}` で解消。`/report/*` に `Cache-Control: no-store`（アプリ内ブラウザの旧CSSキャッシュ対策）。
 
 ## 11. 決定ログ（要点）
 - **D-AIDATA**：顧客データは Team/API（閉空間）へなら渡してよい。
