@@ -793,25 +793,36 @@ export function PhotoReportEditor({
     <section className="panel" ref={panelRef}>
       <div className="editor-topbar no-print" ref={topbarRef}>
         <h1>写真報告書</h1>
+        {/* 設定＝必須級（種類/実施日/物件名/担当）なのでメニューにしまわず常時表示で目立たせる */}
         <button
           type="button"
-          className="btn-util"
-          onClick={() => setHintOpen(true)}
-          title="この画面の使い方"
+          className="btn-primary editor-settings-btn"
+          onClick={() => setSettingsOpen(true)}
+          title="種類（調査/施工）・実施日・物件名・担当者・AIトーンの設定（最初に確認）"
         >
-          ヒント
+          ⚙️ 設定
         </button>
         <button
           type="button"
-          className="btn-util editor-menu-btn"
+          className="btn-util btn-icon editor-menu-btn"
           onClick={() => setMenuOpen(true)}
-          title="保存・AI・PDF・管理・設定・写真などの操作"
+          title="保存・AI・PDF・管理・写真などの操作"
+          aria-label="メニュー"
         >
-          ☰ メニュー
+          ☰
+        </button>
+        <button
+          type="button"
+          className="btn-util btn-icon"
+          onClick={() => setHintOpen(true)}
+          title="この画面の使い方"
+          aria-label="ヒント"
+        >
+          ？
         </button>
       </div>
 
-      {/* ☰ メニュー＝上部の操作ボタンを全部しまう別窓（保存・AI・PDF・管理・設定・写真） */}
+      {/* ☰ メニュー＝上部の操作ボタンをしまう別窓（保存・AI・PDF・管理・写真。設定は必須級＝topbar常時表示） */}
       {menuOpen ? (
         <div className="modal-backdrop no-print" onClick={() => setMenuOpen(false)}>
           <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
@@ -851,7 +862,10 @@ export function PhotoReportEditor({
                   setMenuOpen(false);
                   void generate();
                 }}
-                disabled={generating || genPolling || summaryGenerating || summaryPolling}
+                disabled={
+                  generating || genPolling || summaryGenerating || summaryPolling || includedItems.length === 0
+                }
+                title={includedItems.length === 0 ? "先に写真を取り込み、採用してください" : undefined}
               >
                 {generating
                   ? "依頼中…"
@@ -866,7 +880,8 @@ export function PhotoReportEditor({
                   setMenuOpen(false);
                   void savePdfToDrive();
                 }}
-                disabled={pdfSaving}
+                disabled={pdfSaving || includedItems.length === 0}
+                title={includedItems.length === 0 ? "先に写真を取り込み、採用してください" : undefined}
               >
                 {pdfSaving ? "PDF作成中…" : "PDF出力（Driveへ保存）"}
               </button>
@@ -877,7 +892,12 @@ export function PhotoReportEditor({
                   setMenuOpen(false);
                   void preview();
                 }}
-                title="現在の編集を反映したPDFを開く（未保存なら保存してから表示）"
+                disabled={includedItems.length === 0}
+                title={
+                  includedItems.length === 0
+                    ? "先に写真を取り込み、採用してください"
+                    : "現在の編集を反映したPDFを開く（未保存なら保存してから表示）"
+                }
               >
                 プレビュー（現在の内容）
               </button>
@@ -891,16 +911,6 @@ export function PhotoReportEditor({
                 }}
               >
                 管理（版履歴）
-              </button>
-              <button
-                type="button"
-                className="btn-util"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setSettingsOpen(true);
-                }}
-              >
-                ⚙️ 設定
               </button>
               <p className="menu-info">
                 案件ID: {caseId}　／　写真 {items.length} 枚（本文 {bodyItems.length}・表紙 {coverItem ? 1 : 0}・除外{" "}
@@ -1334,7 +1344,7 @@ export function PhotoReportEditor({
       {items.length === 0 ? (
         <div className="editor-section upload-empty no-print">
           <p className="editor-hint">
-            この報告書フォルダにはまだ写真がありません。現場写真をアップロードすると、ここに並んで編集できます。
+            この報告書フォルダにはまだ写真がありません。現場写真を取り込むと、ここに並んで編集できます。
           </p>
           <button
             type="button"
@@ -1342,10 +1352,10 @@ export function PhotoReportEditor({
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
           >
-            {uploading ? "アップロード中…" : "📷 写真をアップロード"}
+            {uploading ? "取り込み中…" : "＋ Googleドライブに取り込む"}
           </button>
           <p className="editor-hint">
-            スマホのカメラ／写真から複数選べます。アップロード後に「AIで作成」で下書きできます。
+            スマホのカメラ／写真から複数選べます。取り込み後に「すべてAIに任せて作成」で下書きできます。
           </p>
         </div>
       ) : (
@@ -1413,8 +1423,12 @@ export function PhotoReportEditor({
             value={headerSummary}
             readOnly
             rows={3}
-            disabled={summaryGenerating || summaryPolling}
-            placeholder="タップして概要を編集（任意）"
+            disabled={summaryGenerating || summaryPolling || includedItems.length === 0}
+            placeholder={
+              includedItems.length === 0
+                ? "先に写真を取り込むと入力できます"
+                : "タップして概要を編集（任意）"
+            }
             onClick={() => openSummary("headerSummary")}
           />
         </div>
@@ -1426,8 +1440,12 @@ export function PhotoReportEditor({
             value={workItemsText}
             readOnly
             rows={4}
-            disabled={summaryGenerating || summaryPolling}
-            placeholder={"タップして内容を編集（1行に1項目）"}
+            disabled={summaryGenerating || summaryPolling || includedItems.length === 0}
+            placeholder={
+              includedItems.length === 0
+                ? "先に写真を取り込むと入力できます"
+                : "タップして内容を編集（1行に1項目）"
+            }
             onClick={() => openSummary("workItems")}
           />
         </div>
