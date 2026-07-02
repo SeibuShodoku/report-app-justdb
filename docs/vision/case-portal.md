@@ -116,6 +116,7 @@ Slack の案件トピックの入口を「報告書」単発から**総合窓口
 - **認可の単一の門＝`resolveCaseAccess(session, caseId)`**（`src/lib/security/case-access.ts`）。裏＝`staff`(IAP)→`scope:"all"` のみ配線済み。表＝`capability`(署名URL・リング1c)／`customer`(個人=LINE / 法人=メール本人認証)は**継ぎ目だけ**用意し未配線。ポータルUIは caseId をセレクタとしてしか扱わず、認可は必ず本関数を通す＝裏表で門だけ差し替えれば同じレンダラが使える（§4.5 の「同形の土台」）。
 - **在庫の引き先**：`photo_reports`/`prevention_reports`（`case_id` 列・現在版）＋ `case_deliverables`（確定索引）。新規作成は従来どおり Slack 起点（写真投稿→フォルダ）で、ポータルは既存成果物のナビゲーション。
 - **GAS 側（別リポ・本人deploy）**：案件トピックの「報告書」ボタンの向け先を `<BASE>/portal?caseId=<案件ID>` の固定リンクへ差し替える小変更。URL発行（launch token 直リンク）は個別ディープリンクとして併存可。
+- **試験運用の利用者限定（2026-07-02）**：Slack のポータルボタンは **URL ボタン＝GAS ではクリックを止められない**（ブラウザが開いた後に ACK が飛ぶだけ）ため、絞り込みは**アプリ側の門**で行う。env `PORTAL_ALLOWED_EMAILS`（スペース区切りメール）が設定されている間、`resolveCaseAccess` の staff 分岐が IAP メールを allowlist 照合（現在＝石橋/堀上/岡野の3名）。未設定に戻せば IAP のみ（社内全員）。一方 **報告書ボタン（`pr_*`）の利用者制限は GAS の Script Property `PHOTO_REPORT_TESTERS`**（Slack userId・カンマ/空白区切り・コード変更不要で即反映）が既存の門。
 
 ## 8. 横断制約（ブロッカーではなく設計前提）
 

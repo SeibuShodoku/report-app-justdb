@@ -16,6 +16,18 @@
  */
 import { verifyLaunchToken } from "@/lib/security/launch-token";
 
+/**
+ * ポータル試験運用の社内 allowlist（env `PORTAL_ALLOWED_EMAILS`・カンマ/空白区切り）。
+ * Slack のポータルボタンは URL ボタン＝GAS 側ではクリックを止められない（開いた後に ACK が飛ぶだけ）ため、
+ * 「誰が開けるか」はこの門で絞る。**未設定なら従来どおり IAP のみが門**（＝@seibu-s.co.jp 全員）。
+ */
+function portalAllowedEmails(): string[] {
+  return (process.env.PORTAL_ALLOWED_EMAILS ?? "")
+    .split(/[,\s]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 /** 誰として案件に来たか。裏＝staff（IAP）、表＝capability（署名URL）/ customer（本人認証）。 */
 export type CaseSession =
   | { kind: "staff"; email: string | null }
@@ -37,10 +49,19 @@ export function resolveCaseAccess(session: CaseSession, caseId: string): CaseAcc
   if (!caseId) return { allowed: false, reason: "案件IDが空です。" };
 
   switch (session.kind) {
-    case "staff":
+    case "staff": {
       // 裏＝IAP が門。ここに来られている時点で @seibu-s.co.jp 認証済み。caseId はセレクタ。
       // （ローカル開発は IAP ヘッダ無し＝email:null でも社内扱い。本番は IAP 手前で弾かれる。）
+      // 試験運用中は PORTAL_ALLOWED_EMAILS で利用者をさらに絞る（設定がある間だけ効く狭い門）。
+      const allow = portalAllowedEmails();
+      if (allow.length > 0 && (!session.email || !allow.includes(session.email.toLowerCase()))) {
+        return {
+          allowed: false,
+          reason: "案件ポータルは試験運用中のため、利用できるメンバーを限定しています。"
+        };
+      }
       return { allowed: true, scope: "all" };
+    }
 
     case "capability": {
       // 表（近い将来・リング1c）：署名URL＝ケイパビリティ。possession が認可。

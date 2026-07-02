@@ -40,6 +40,7 @@
 
 ## 秘密の置き場
 - **Cloud Run env**（report-app サーバー）：`GOOGLE_CLIENT_ID/SECRET`・`GOOGLE_DRIVE_REFRESH_TOKEN`・`SUPABASE_*`・`REPORT_LINK_SECRET`・`DRIVE_PROXY_SERVER_SECRET`（`--env-vars-file` で投入・ソースに焼かない）
+  - `PORTAL_ALLOWED_EMAILS`（秘密ではない・2026-07-02）＝案件ポータル `/portal` の試験運用 allowlist。**スペース区切り**の社内メール（カンマは gcloud の `--update-env-vars` 区切りと衝突するので使わない）。未設定なら IAP のみが門（社内全員）。判定は `security/case-access.ts` の staff 分岐。
 - **ローカル開発**：`.env.local`（gitignore）
 - **VM ワーカー**：`SUPABASE_*`・`GOOGLE_CLIENT_ID/SECRET`・`GOOGLE_DRIVE_REFRESH_TOKEN`（mgmt-strat RW＝Drive 直読み/直書き）・`CLAUDE_MODEL`/`CLAUDE_EFFORT`（既定 Opus 4.8/medium）・`MAX_*`/`POLL_INTERVAL_MS` 等（全一覧＝`worker/README.md`）。**Option A のため `report-worker-iap` SA鍵・`REPORT_APP_BASE` は不要**（旧 Option B の名残）
 
