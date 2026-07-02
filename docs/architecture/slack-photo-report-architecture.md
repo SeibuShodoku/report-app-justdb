@@ -165,11 +165,13 @@
 - ✅ **案件ポータル実体化＋PC図形選択の修正（2026-07-02・rev `00060-fnv`→`00061-229`）**：
   - **案件ポータル `/portal?caseId=`（総合窓口・IAP）**：`photo_reports`/`prevention_reports`（`case_id`列）＋`case_deliverables` から案件の成果物を一覧し、各編集面へ deep-link（起動トークンは `signLaunchToken` でアプリがその場採番＝`/report/*` の token 契約は不変）。認可は**単一の門 `resolveCaseAccess(session, caseId)`**（`src/lib/security/case-access.ts`）：裏=staff(IAP)→`scope:"all"` のみ配線、表=capability(署名URL/リング1c)・customer(LINE/メール)は継ぎ目のみ。設計記録＝`../vision/case-portal.md §7.5`。**残＝GAS側で案件トピックに 🗂案件ポータル URLボタン追加（依頼書＝`../handoff/justdb-hub-gas-portal-button.md`・本人deploy）**。
   - **PCで図形をクリック選択できない不具合（rev 00061）**：図形は `fill:none` で当たり判定が2.5pxの線のみ→マウスでは内部クリックが素通り。選択モードで `pointer-events:all`＋細い線/矢印/手書きに**透明な太い当たり判定線（16px）**を重ね本体全体で掴めるように。「余白で選択解除」を click（`e.target` 判定＝setPointerCapture 後にSVGを指し選択直後に解除される競合）から**背景 pointerdown** へ移設。
-- ✅ **ポータル＝写真報告書の管理面＋正本指定＋Slack動線1本化（2026-07-02 後半・rev `00062-vjs`→`00065系`）**：
+- ✅ **ポータル＝写真報告書の管理面＋正本指定＋Slack動線1本化（2026-07-02 後半〜03・rev `00062-vjs`→`00067-8d4`）**：
   - **試験運用の利用者限定**：Slack の URL ボタンは GAS では止められない→アプリ側の門（`resolveCaseAccess` staff 分岐）にサーフェス別 allowlist（env `PORTAL_ALLOWED_EMAILS` / `REPORT_DIRECT_ALLOWED_EMAILS`・**スペース区切り**）。スレッド内 `pr_*` value ボタンは従来どおり GAS Script Property `PHOTO_REPORT_TESTERS`（SlackID）。
   - **Slack ボタン1本化**：案件トピック＝「📋 報告書」1つ→**案件ポータル `/portal?caseId=&topFolderId=`** 固定リンク（旧 `pr_menu` は同URLのエフェメラル案内・種類選択メニュー廃止）。
   - **ポータル改修＝写真報告書だけ**（見積・防除の導線撤去）：種類ラベル（**調査/施工**＝⚙️設定 `report_type`）付きで**時系列に1列**（日付昇順・↑↓手動並び替え）／**正本化・非正本化**（**件ごと・複数可**のトグル→ 案件フォルダ **`_ai/report-index.json`**＝`canonicalFolderIds[]`＋`order[]`・`src/lib/case-report-index.ts`）／**新規作成（本日分）**（`/report/photo?caseId=&topFolderId=&new=1`＝本日フォルダ find-or-create→サイト内アップロード。**Slack/Drive 写真先入れの動線は廃止**）。ドメイン構造＝案件発生→調査→調査報告書/見積（複数→正本を人が選ぶ）→施工×n→施工報告書。予定ID紐付けは将来。
-  - **AI の前回参照を一意化**：worker が生成時に `_ai/report-index.json` → 正本（複数・時系列・最大 `MAX_CANONICAL_REFS`=3件）の現在版 `report_json` の骨子（種類/フォルダ名/まとめ/作業内容/見出し）を `prev-report-canonical.md` として同梱（`buildCanonicalContext`・summary モードも同様）。**それまで「前の報告書」は次の生成にほぼ流用されていなかった**（digest は案件フォルダ直下 PDF のみ読み、`写真報告書.pdf` は日付フォルダ内＝不可視）。**worker 反映は本人（VM clone+cp+restart）**。
+  - **AI の前回参照を一意化**：worker が生成時に `_ai/report-index.json` → 正本（複数・時系列・最大 `MAX_CANONICAL_REFS`=3件）の現在版 `report_json` の骨子（種類/フォルダ名/まとめ/作業内容/見出し）を `prev-report-canonical.md` として同梱（`buildCanonicalContext`・summary モードも同様）。**それまで「前の報告書」は次の生成にほぼ流用されていなかった**（digest は案件フォルダ直下 PDF のみ読み、`写真報告書.pdf` は日付フォルダ内＝不可視）。
+  - **worker 反映済（2026-07-03・本人依頼でリモート実行）**：`gcloud compute scp/ssh --tunnel-through-iap`（runbook §4）→ restart。副産物の発見＝**worker 停止時に `processing` のまま取り残された孤児ジョブは誰も再claimしない**（digest job 575 が30h放置→手動 `status=queued` PATCH で復旧・新workerで完走＝E2E確認）。恒久対策（stale processing の自動requeue）は今後の課題。
+  - **編集面UI磨き（rev `00067-8d4`）**：topbar＝**⚙️設定（緑・常時表示＝必須級）→☰→？**（設定はメニューから撤去・☰/？は記号のみの38pxミニボタン）。**採用0枚では「すべてAIに任せて作成」「PDF出力」「プレビュー」を無効化**＋まとめの概要/内容も入力不可（理由は title/placeholder で提示）。空状態のボタン文言を写真管理と統一＝「＋ Googleドライブに取り込む」。
 
 ## 11. 決定ログ（要点）
 - **D-AIDATA**：顧客データは Team/API（閉空間）へなら渡してよい。
