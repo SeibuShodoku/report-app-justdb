@@ -3,11 +3,12 @@ import { redirect } from "next/navigation";
 import { PhotoReportEditor } from "@/components/photo-report-editor";
 import { latestPhotoReportHref } from "@/lib/case-portal";
 import { driveConfigured } from "@/lib/drive";
+import { driveWriteConfigured, ensureSubfolder } from "@/lib/drive-write";
 import { hasStoredReport, loadPhotoReportView } from "@/lib/photo-report-source";
 import { loadSettings } from "@/lib/photo-report-settings-store";
 import { resolveCaseAccess } from "@/lib/security/case-access";
 import { iapUserEmail } from "@/lib/security/iap-user";
-import { verifyLaunchToken } from "@/lib/security/launch-token";
+import { signLaunchToken, verifyLaunchToken } from "@/lib/security/launch-token";
 
 // Drive 読み取り（node:crypto/fetch）を行うため Node ランタイム固定・毎回最新を取得。
 export const runtime = "nodejs";
@@ -33,10 +34,13 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
   const folderId = pickParam(sp.folderId)?.trim();
   const token = pickParam(sp.token)?.trim();
   const caseIdParam = pickParam(sp.caseId)?.trim();
+  const topFolderId = pickParam(sp.topFolderId)?.trim();
 
-  // 報告書直リンク入口（Slack 📋ボタン・暫定）: /report/photo?caseId=… のみで着地。
+  // 報告書直リンク入口（Slack 📋ボタン・暫定）: /report/photo?caseId=…&topFolderId=… で着地。
   // 報告書は日付フォルダ単位の管理＝「その案件の報告書」は一意でないため、IAP 裏で caseId を
   // セレクタとして**最新の報告書へ解決**し、token を採番して正規URL（folderId&token）へ転送する。
+  // 未作成の案件は topFolderId（案件親フォルダ）配下に「写真_YYYYMMDD」を find-or-create して
+  // 空の編集面（アプリ内アップローダ）へ＝**写真の取り込みはサイトで行う**（Slack写真投稿の動線は廃止）。
   if (!folderId && !token && caseIdParam) {
     const email = iapUserEmail(await headers());
     const access = resolveCaseAccess({ kind: "staff", email }, caseIdParam, "report-direct");
@@ -52,14 +56,40 @@ export default async function PhotoReportPage({ searchParams }: PageProps) {
     }
     const href = await latestPhotoReportHref(caseIdParam);
     if (href) redirect(href);
+
+    if (topFolderId && driveWriteConfigured()) {
+      // JST の今日で「写真_YYYYMMDD」（GAS pr_start と同じ命名・find-or-create で冪等）。
+      const ymd = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
+      let dayFolderId: string;
+      try {
+        dayFolderId = await ensureSubfolder(topFolderId, `写真_${ymd}`);
+      } catch (error) {
+        return (
+          <main>
+            <section className="panel">
+              <h1>写真報告書</h1>
+              <p className="notice error">
+                写真フォルダの作成に失敗しました：
+                {error instanceof Error ? error.message : "不明なエラー"}
+              </p>
+            </section>
+          </main>
+        );
+      }
+      const t = signLaunchToken({ caseId: caseIdParam, driveFolderId: dayFolderId });
+      redirect(
+        `/report/photo?folderId=${encodeURIComponent(dayFolderId)}&token=${encodeURIComponent(t)}`
+      );
+    }
+
     return (
       <main>
         <section className="panel">
           <h1>写真報告書</h1>
           <p className="notice">
             この案件（<code>{caseIdParam}</code>
-            ）にはまだ写真報告書がありません。Slack の案件スレッドから写真フォルダを作成し、
-            写真を入れて「📝 報告書作成」を押してください。
+            ）にはまだ写真報告書がありません。このリンクには案件フォルダの情報が無いため、
+            サイト上での新規作成もできません。Slack の案件トピックの「📋 報告書」から開き直してください。
           </p>
         </section>
       </main>
