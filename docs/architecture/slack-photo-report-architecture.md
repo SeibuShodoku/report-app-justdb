@@ -162,6 +162,9 @@
   - **PDF＝Driveへ保存**：`/api/photo-report/pdf?save=1` が案件フォルダへ `写真報告書.pdf` を upsert（`drive-write.upsertBinaryFile`）。**プレビュー＝`?inline=1`**（iPhone可）＋押下時に未保存なら保存してから開く＝「現在の内容」を表示。
   - **UI集約・固定**：上部ボタンを **☰ メニュー**（別窓）に集約、手順は**ヒント**別窓。**段積み固定ヘッダ**（上部バー→アラート→②見出し＝写真管理/並べ替え、`--topbar-h`/`--alert-h` を実測してオフセット）。版管理/写真管理の**閉じるを最上部固定**。全生成完了時は**「最新版を読み込む」ボタン＋タブ復帰で自動reload**（背面タブで setTimeout が保留される問題対策）。実エラーを編集面に表示（`getGenerationStatus` が error も返す）。手動再生成で `attempts` リセット（再試行上限ロック解消）。
   - **一覧グリッド＝2列・端末非依存で写真最大化**：写真セルは `aspect-ratio:4/3`＋`object-fit:cover` で**全カード同じ高さ**、`.photo-grid` は列間最小＋`margin-inline` でパネル余白の外まで拡張。**写真が痩せる真因＝`<figure>.photo-card` の既定 `margin:0 40px` と `main{place-items:center}` によるパネル幅収縮**を実測で特定し `.photo-card{margin:0}`＋`main{grid-template-columns:minmax(0,1fr)}` で解消。`/report/*` に `Cache-Control: no-store`（アプリ内ブラウザの旧CSSキャッシュ対策）。
+- ✅ **案件ポータル実体化＋PC図形選択の修正（2026-07-02・rev `00060-fnv`→`00061-229`）**：
+  - **案件ポータル `/portal?caseId=`（総合窓口・IAP）**：`photo_reports`/`prevention_reports`（`case_id`列）＋`case_deliverables` から案件の成果物を一覧し、各編集面へ deep-link（起動トークンは `signLaunchToken` でアプリがその場採番＝`/report/*` の token 契約は不変）。認可は**単一の門 `resolveCaseAccess(session, caseId)`**（`src/lib/security/case-access.ts`）：裏=staff(IAP)→`scope:"all"` のみ配線、表=capability(署名URL/リング1c)・customer(LINE/メール)は継ぎ目のみ。設計記録＝`../vision/case-portal.md §7.5`。**残＝GAS側で案件トピックに 🗂案件ポータル URLボタン追加（依頼書＝`../handoff/justdb-hub-gas-portal-button.md`・本人deploy）**。
+  - **PCで図形をクリック選択できない不具合（rev 00061）**：図形は `fill:none` で当たり判定が2.5pxの線のみ→マウスでは内部クリックが素通り。選択モードで `pointer-events:all`＋細い線/矢印/手書きに**透明な太い当たり判定線（16px）**を重ね本体全体で掴めるように。「余白で選択解除」を click（`e.target` 判定＝setPointerCapture 後にSVGを指し選択直後に解除される競合）から**背景 pointerdown** へ移設。
 
 ## 11. 決定ログ（要点）
 - **D-AIDATA**：顧客データは Team/API（閉空間）へなら渡してよい。
