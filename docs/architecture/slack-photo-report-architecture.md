@@ -168,8 +168,8 @@
 - ✅ **ポータル＝写真報告書の管理面＋正本指定＋Slack動線1本化（2026-07-02 後半・rev `00062-vjs`→`00065系`）**：
   - **試験運用の利用者限定**：Slack の URL ボタンは GAS では止められない→アプリ側の門（`resolveCaseAccess` staff 分岐）にサーフェス別 allowlist（env `PORTAL_ALLOWED_EMAILS` / `REPORT_DIRECT_ALLOWED_EMAILS`・**スペース区切り**）。スレッド内 `pr_*` value ボタンは従来どおり GAS Script Property `PHOTO_REPORT_TESTERS`（SlackID）。
   - **Slack ボタン1本化**：案件トピック＝「📋 報告書」1つ→**案件ポータル `/portal?caseId=&topFolderId=`** 固定リンク（旧 `pr_menu` は同URLのエフェメラル案内・種類選択メニュー廃止）。
-  - **ポータル改修＝写真報告書だけ**（見積・防除の導線撤去）：日付フォルダごとの一覧（フォルダ名＋最終更新）／**正本指定**（「正本にする」→ 案件フォルダ `_ai/canonical-report.json`・`src/lib/case-canonical.ts`）／**新規作成（本日分）**（`/report/photo?caseId=&topFolderId=&new=1`＝本日フォルダ find-or-create→サイト内アップロード。**Slack/Drive 写真先入れの動線は廃止**）。
-  - **AI の前回参照を一意化**：worker が生成時に `_ai/canonical-report.json` → 正本の現在版 `report_json` の骨子（まとめ/作業内容/見出し）を `prev-report-canonical.md` として同梱（`readCanonicalPrevReport`・summary モードも同様）。**それまで「前の報告書」は次の生成にほぼ流用されていなかった**（digest は案件フォルダ直下 PDF のみ読み、`写真報告書.pdf` は日付フォルダ内＝不可視）。**worker 反映は本人（VM clone+cp+restart）**。
+  - **ポータル改修＝写真報告書だけ**（見積・防除の導線撤去）：種類ラベル（**調査/施工**＝⚙️設定 `report_type`）付きで**時系列に1列**（日付昇順・↑↓手動並び替え）／**正本化・非正本化**（**件ごと・複数可**のトグル→ 案件フォルダ **`_ai/report-index.json`**＝`canonicalFolderIds[]`＋`order[]`・`src/lib/case-report-index.ts`）／**新規作成（本日分）**（`/report/photo?caseId=&topFolderId=&new=1`＝本日フォルダ find-or-create→サイト内アップロード。**Slack/Drive 写真先入れの動線は廃止**）。ドメイン構造＝案件発生→調査→調査報告書/見積（複数→正本を人が選ぶ）→施工×n→施工報告書。予定ID紐付けは将来。
+  - **AI の前回参照を一意化**：worker が生成時に `_ai/report-index.json` → 正本（複数・時系列・最大 `MAX_CANONICAL_REFS`=3件）の現在版 `report_json` の骨子（種類/フォルダ名/まとめ/作業内容/見出し）を `prev-report-canonical.md` として同梱（`buildCanonicalContext`・summary モードも同様）。**それまで「前の報告書」は次の生成にほぼ流用されていなかった**（digest は案件フォルダ直下 PDF のみ読み、`写真報告書.pdf` は日付フォルダ内＝不可視）。**worker 反映は本人（VM clone+cp+restart）**。
 
 ## 11. 決定ログ（要点）
 - **D-AIDATA**：顧客データは Team/API（閉空間）へなら渡してよい。

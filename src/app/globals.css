@@ -1636,10 +1636,15 @@ button.btn-secondary {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+.portal-aside form {
+  display: flex;
   margin: 0;
 }
 .portal-side-btn {
-  padding: 8px 12px;
+  padding: 8px 9px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--panel);
@@ -1650,12 +1655,21 @@ button.btn-secondary {
   white-space: nowrap;
   transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
 }
-.portal-side-btn:hover,
+.portal-side-btn:hover:not(:disabled),
 .portal-side-btn:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
   background: #f0fdfa;
   outline: none;
+}
+.portal-side-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.portal-side-btn--on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #f0fdfa;
 }
 .portal-hint {
   margin: 8px 0 0;

@@ -250,45 +250,65 @@ async function readCaseDigest(folderId) {
   return null;
 }
 
-// --- 正本報告書（人がポータルで指定・_ai/canonical-report.json） ---
+// --- 正本報告書（人がポータルで指定・_ai/report-index.json） ---
+const MAX_CANONICAL_REFS = Number(process.env.MAX_CANONICAL_REFS ?? "3");
+
 /**
- * 案件フォルダ（写真フォルダの親）の _ai/canonical-report.json を読み、
- * **今回とは別フォルダ**の正本があればその現在版 report_json を返す（無ければ null）。
+ * 案件フォルダ（写真フォルダの親）の _ai/report-index.json（canonicalFolderIds＝**複数可**：
+ * 調査・施工それぞれの「件」に正本があり得る）を読み、**今回とは別フォルダ**の正本の骨子を
+ * まとめた Markdown を返す（無ければ null）。時系列（index の並び）で最大 MAX_CANONICAL_REFS 件。
  * 「AIが前の報告書を読む時にどれを読むべきか」を人の指定で一意にする。
- * 書き手＝report-app ポータル（src/lib/case-canonical.ts）。
+ * 書き手＝report-app ポータル（src/lib/case-report-index.ts）。
  */
-async function readCanonicalPrevReport(folderId) {
+async function buildCanonicalContext(folderId) {
   try {
     const parent = await getParentId(folderId);
     if (!parent) return null;
     const ai = await findSubfolderRO(parent, AI_FOLDER_NAME);
     if (!ai) return null;
-    const txt = await readTextByNameRO(ai, "canonical-report.json");
+    const txt = await readTextByNameRO(ai, "report-index.json");
     if (!txt) return null;
-    const c = JSON.parse(txt);
-    if (!c?.folderId || c.folderId === folderId) return null; // 自分自身が正本＝前回参照は不要
-    const rows = await sb(
-      "GET",
-      `photo_reports?folder_id=eq.${encodeURIComponent(c.folderId)}&select=report_json&limit=1`
-    );
-    return rows?.[0]?.report_json ?? null;
+    const idx = JSON.parse(txt);
+    const ids = (Array.isArray(idx?.canonicalFolderIds) ? idx.canonicalFolderIds : [])
+      .filter((id) => typeof id === "string" && id && id !== folderId)
+      .slice(0, MAX_CANONICAL_REFS);
+    if (ids.length === 0) return null;
+
+    const sections = [];
+    for (const id of ids) {
+      const rows = await sb(
+        "GET",
+        `photo_reports?folder_id=eq.${encodeURIComponent(id)}&select=report_json&limit=1`
+      );
+      const rj = rows?.[0]?.report_json;
+      if (!rj) continue;
+      const s = await getSettings(id);
+      const kind = s?.report_type === "survey" ? "調査" : "施工";
+      let name = "";
+      try {
+        name = (await getFileMeta(id)).name || "";
+      } catch { /* ラベルのみ＝欠けても可 */ }
+      const lines = [`## ${kind}写真報告書${name ? `（${name}）` : ""}`];
+      if (rj.headerSummary) lines.push("", "### まとめ", String(rj.headerSummary));
+      if (Array.isArray(rj.workItems) && rj.workItems.length) {
+        lines.push("", "### 作業内容", ...rj.workItems.map((w) => `- ${w}`));
+      }
+      const heads = (Array.isArray(rj.photoItems) ? rj.photoItems : [])
+        .map((p) => p?.heading)
+        .filter(Boolean);
+      if (heads.length) lines.push("", "### 写真見出し", ...heads.map((h) => `- ${h}`));
+      sections.push(lines.join("\n"));
+    }
+    if (sections.length === 0) return null;
+    return [
+      "# この案件の正本報告書（人が指定・時系列）",
+      "案件は 調査 → 施工 の順に進む。調査の正本は施工の背景として、直近の正本は用語・文体の基準として使う。",
+      "",
+      sections.join("\n\n")
+    ].join("\n");
   } catch {
     return null; // 正本は補助文脈＝読めなくても生成は止めない
   }
-}
-
-/** 正本 report_json → AI に渡す要約 Markdown（トークン節約のため全文でなく骨子だけ）。 */
-function canonicalPrevMd(rj) {
-  const lines = ["# 前回の正本報告書（人が指定した基準・参考用）"];
-  if (rj.headerSummary) lines.push("", "## まとめ", String(rj.headerSummary));
-  if (Array.isArray(rj.workItems) && rj.workItems.length) {
-    lines.push("", "## 作業内容", ...rj.workItems.map((w) => `- ${w}`));
-  }
-  const heads = (Array.isArray(rj.photoItems) ? rj.photoItems : [])
-    .map((p) => p?.heading)
-    .filter(Boolean);
-  if (heads.length) lines.push("", "## 写真見出し", ...heads.map((h) => `- ${h}`));
-  return lines.join("\n");
 }
 
 // --- Drive 書込み（ダイジェスト直書き・RW token / Option A） ---
@@ -514,7 +534,7 @@ function buildPrompt(ctx, docFileNames, hasDigest, settings, hasPrevCanonical) {
       ? `このディレクトリには現場写真(画像)に加え、案件書類のPDF（${docFileNames.join(" / ")}）があります。**まず書類を読み、実際の作業内容（対象生物・対策の種類など）を正確に把握**してから写真を説明してください。`
       : "案件書類は無いので、フォルダ名と写真から判断してください。";
   const prevLine = hasPrevCanonical
-    ? "**prev-report-canonical.md** は、この案件で人が「正本」に指定した前回の報告書の骨子です。継続案件として、対象生物・薬剤・場所の呼び方・文体をこれに揃えてください（ただし**今回の写真と書類が事実の正**。前回の内容を今回やったことにしない）。"
+    ? "**prev-report-canonical.md** は、この案件で人が「正本」に指定した報告書（複数のことがある：調査→施工の時系列）の骨子です。調査の正本は施工の背景として読み、対象生物・薬剤・場所の呼び方・文体をこれに揃えてください（ただし**今回の写真と書類が事実の正**。正本の内容を今回やったことにしない）。"
     : "";
   return [
     `このディレクトリにある画像は、害虫防除（${kind}）の現場写真です。これから写真報告書の下書きを作ります。`,
@@ -544,7 +564,7 @@ function buildSummaryPrompt(headings, settings, hasDigest, hasPrevCanonical) {
     ? "このディレクトリの **case-digest.md** に案件の時系列ダイジェストがあります。まずそれを読み、実際の作業内容（対象生物・対策の種類）を把握してください。"
     : "案件書類はありません。見出しと方針から判断してください。";
   const prevLine = hasPrevCanonical
-    ? "**prev-report-canonical.md** は、人が「正本」に指定した前回報告書の骨子です。用語・文体の基準として参照してください（今回の見出しが事実の正）。"
+    ? "**prev-report-canonical.md** は、人が「正本」に指定したこの案件の報告書（複数のことがある・時系列）の骨子です。用語・文体の基準として参照してください（今回の見出しが事実の正）。"
     : "";
   const headingLines = headings.length
     ? headings.map((h, i) => `${i + 1}. ${h}`).join("\n")
@@ -669,12 +689,12 @@ async function processJob(job) {
       }
     }
 
-    // 正本指定（人がポータルで指定した前回の基準報告書）があれば骨子を同梱。
-    const prevCanonical = await readCanonicalPrevReport(job.folder_id);
-    if (prevCanonical) writeFileSync(join(dir, "prev-report-canonical.md"), canonicalPrevMd(prevCanonical));
+    // 正本指定（人がポータルで指定・複数可）があれば骨子を同梱。
+    const canonicalMd = await buildCanonicalContext(job.folder_id);
+    if (canonicalMd) writeFileSync(join(dir, "prev-report-canonical.md"), canonicalMd);
 
     const settings = await getSettings(job.folder_id);
-    const { stdout } = await runClaude(dir, buildPrompt(ctx, docNames, !!digest, settings, !!prevCanonical));
+    const { stdout } = await runClaude(dir, buildPrompt(ctx, docNames, !!digest, settings, !!canonicalMd));
 
     // 通常は claude が report.json を書く。書かれていない場合:
     //  ・stdout に JSON があればそれを採用（claude がファイルでなく出力に返した時の保険）
@@ -739,11 +759,11 @@ async function processSummaryJob(job) {
 
     const digest = await readCaseDigest(job.folder_id);
     if (digest) writeFileSync(join(dir, "case-digest.md"), digest);
-    const prevCanonical = await readCanonicalPrevReport(job.folder_id);
-    if (prevCanonical) writeFileSync(join(dir, "prev-report-canonical.md"), canonicalPrevMd(prevCanonical));
+    const canonicalMd = await buildCanonicalContext(job.folder_id);
+    if (canonicalMd) writeFileSync(join(dir, "prev-report-canonical.md"), canonicalMd);
     const settings = await getSettings(job.folder_id);
 
-    const { stdout } = await runClaude(dir, buildSummaryPrompt(headings, settings, !!digest, !!prevCanonical));
+    const { stdout } = await runClaude(dir, buildSummaryPrompt(headings, settings, !!digest, !!canonicalMd));
 
     const reportPath = join(dir, "report.json");
     let raw;

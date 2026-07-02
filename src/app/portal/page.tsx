@@ -4,7 +4,7 @@ import { iapUserEmail } from "@/lib/security/iap-user";
 import { resolveCaseAccess } from "@/lib/security/case-access";
 import { loadCasePortal, type PortalReport } from "@/lib/case-portal";
 import type { DeliverableEntry } from "@/lib/case-deliverables";
-import { setCanonicalAction } from "./actions";
+import { moveReportAction, toggleCanonicalAction } from "./actions";
 
 // Drive/Supabase 読取・node:crypto（token 採番）を行うため Node ランタイム固定・毎回最新。
 export const runtime = "nodejs";
@@ -37,46 +37,89 @@ function fmt(iso: string | null | undefined): string {
   }
 }
 
+/** 行タイトル＝種類ラベル（⚙️設定の 調査/施工）。未設定は素の「写真報告書」。 */
+function kindLabel(r: PortalReport): string {
+  if (r.kind === "survey") return "調査写真報告書";
+  if (r.kind === "construction") return "施工写真報告書";
+  return "写真報告書";
+}
+
 function ReportRow({
   r,
   caseId,
-  topFolderId
+  topFolderId,
+  orderCsv,
+  isFirst,
+  isLast
 }: {
   r: PortalReport;
   caseId: string;
   topFolderId: string | null;
+  orderCsv: string;
+  isFirst: boolean;
+  isLast: boolean;
 }) {
   const when = fmt(r.generatedAt);
-  const label = r.folderName ?? `写真報告書（…${r.folderId.slice(-6)}）`;
+  const common = (
+    <>
+      <input type="hidden" name="caseId" value={caseId} />
+      <input type="hidden" name="folderId" value={r.folderId} />
+      <input type="hidden" name="topFolderId" value={topFolderId ?? ""} />
+    </>
+  );
   return (
     <li className="portal-row">
       <Link href={r.href} className="portal-link">
         <span className="portal-ic" aria-hidden>
-          📷
+          {r.kind === "survey" ? "🔍" : "📷"}
         </span>
         <span className="portal-body">
           <span className="portal-title">
-            {label}
+            {kindLabel(r)}
             {r.isCanonical && <span className="portal-tag portal-tag--ok">正本</span>}
           </span>
           <span className="portal-sub">
-            {when ? `最終更新 ${when}` : "更新日時なし"} ・ 編集面を開く
+            {r.folderName ?? `…${r.folderId.slice(-6)}`}
+            {when ? ` ・ 最終更新 ${when}` : ""}
           </span>
         </span>
         <span className="portal-chev" aria-hidden>
           ›
         </span>
       </Link>
-      {!r.isCanonical && (
-        <form action={setCanonicalAction} className="portal-aside">
-          <input type="hidden" name="caseId" value={caseId} />
-          <input type="hidden" name="folderId" value={r.folderId} />
-          <input type="hidden" name="topFolderId" value={topFolderId ?? ""} />
-          <button type="submit" className="portal-side-btn" title="この報告書を正本にする（AIが次回参照する基準）">
-            正本にする
+      <span className="portal-aside">
+        <form action={moveReportAction}>
+          {common}
+          <input type="hidden" name="dir" value="up" />
+          <input type="hidden" name="order" value={orderCsv} />
+          <button type="submit" className="portal-side-btn" disabled={isFirst} title="上へ">
+            ↑
           </button>
         </form>
-      )}
+        <form action={moveReportAction}>
+          {common}
+          <input type="hidden" name="dir" value="down" />
+          <input type="hidden" name="order" value={orderCsv} />
+          <button type="submit" className="portal-side-btn" disabled={isLast} title="下へ">
+            ↓
+          </button>
+        </form>
+        <form action={toggleCanonicalAction}>
+          {common}
+          <input type="hidden" name="canonical" value={r.isCanonical ? "0" : "1"} />
+          <button
+            type="submit"
+            className={`portal-side-btn${r.isCanonical ? " portal-side-btn--on" : ""}`}
+            title={
+              r.isCanonical
+                ? "正本を解除する"
+                : "正本にする（顧客に届ける正・AIが次回参照する基準。複数指定可）"
+            }
+          >
+            {r.isCanonical ? "正本解除" : "正本にする"}
+          </button>
+        </form>
+      </span>
     </li>
   );
 }
@@ -85,9 +128,11 @@ function ReportRow({
  * 案件ポータル（総合窓口・社内/IAP）＝**写真報告書の管理面**。
  * Slack の案件トピックの「📋 報告書」固定リンク `/portal?caseId=…&topFolderId=…` で入る。
  *
- * - 一覧＝日付フォルダ（写真_YYYYMMDD）ごとの報告書。各行から編集面へ。
- * - **正本**＝人が1つ指定（案件フォルダ `_ai/canonical-report.json`）。AI が次の報告書を
- *   作る時に「前回の基準」として読む＝どれを読むべきか迷わない。
+ * 案件は時系列で進む（調査 → 調査報告書/見積 → 施工×n → 施工報告書）：
+ * - 一覧＝種類ラベル（調査/施工＝編集面⚙️設定の report_type）付きで**時系列（作成順）に1列**。
+ *   ↑↓で手動並び替え（`_ai/report-index.json` に保存）。
+ * - **正本**＝件（調査・施工の1回）ごとに「顧客に届ける正」を指定。**複数指定可・解除可**。
+ *   AI が次の報告書を作る時に正本（複数）を参照＝どれを読むべきか迷わない。
  * - 新規作成＝本日分の日付フォルダを find-or-create してサイト内アップロードへ。
  *
  * 認可は必ず `resolveCaseAccess` を通す（caseId はセレクタ・門は IAP＋試験運用 allowlist）。
@@ -137,6 +182,8 @@ export default async function CasePortalPage({ searchParams }: PageProps) {
   const newReportHref = topFolderId
     ? `/report/photo?caseId=${encodeURIComponent(caseId)}&topFolderId=${encodeURIComponent(topFolderId)}&new=1`
     : null;
+  const orderCsv = (portal?.photoReports ?? []).map((r) => r.folderId).join(",");
+  const hasCanonical = (portal?.photoReports ?? []).some((r) => r.isCanonical);
 
   return (
     <main>
@@ -156,18 +203,26 @@ export default async function CasePortalPage({ searchParams }: PageProps) {
         {portal && (
           <>
             <section className="portal-group">
-              <h2 className="portal-group-h">📷 写真報告書</h2>
+              <h2 className="portal-group-h">📷 写真報告書（時系列）</h2>
               {portal.photoReports.length > 0 ? (
                 <>
                   <ul className="portal-list">
-                    {portal.photoReports.map((r) => (
-                      <ReportRow key={r.folderId} r={r} caseId={caseId} topFolderId={topFolderId} />
+                    {portal.photoReports.map((r, i) => (
+                      <ReportRow
+                        key={r.folderId}
+                        r={r}
+                        caseId={caseId}
+                        topFolderId={topFolderId}
+                        orderCsv={orderCsv}
+                        isFirst={i === 0}
+                        isLast={i === portal!.photoReports.length - 1}
+                      />
                     ))}
                   </ul>
-                  {!portal.canonicalFolderId && portal.photoReports.length > 1 && (
+                  {!hasCanonical && portal.photoReports.length > 0 && (
                     <p className="portal-hint">
-                      ⚠️ 正本が未指定です。「正本にする」で基準の報告書を決めると、AI
-                      が次の報告書を作る時にそれを参照します。
+                      正本が未指定です。顧客に届ける報告書を「正本にする」で指定すると、AI
+                      が次の報告書を作る時にそれを参照します（調査・施工それぞれに指定できます）。
                     </p>
                   )}
                 </>
@@ -188,7 +243,8 @@ export default async function CasePortalPage({ searchParams }: PageProps) {
                       <span className="portal-body">
                         <span className="portal-title">本日分の写真報告書を作成</span>
                         <span className="portal-sub">
-                          写真_本日 フォルダを用意 → サイト上で写真を取り込んで AI 作成
+                          写真_本日 フォルダを用意 → サイト上で写真を取り込み、⚙️設定で
+                          調査/施工を選んで AI 作成
                         </span>
                       </span>
                       <span className="portal-chev" aria-hidden>
