@@ -17,12 +17,24 @@
 import { verifyLaunchToken } from "@/lib/security/launch-token";
 
 /**
- * ポータル試験運用の社内 allowlist（env `PORTAL_ALLOWED_EMAILS`・カンマ/空白区切り）。
- * Slack のポータルボタンは URL ボタン＝GAS 側ではクリックを止められない（開いた後に ACK が飛ぶだけ）ため、
+ * どの入口（サーフェス）から来たか。試験運用中はサーフェスごとに社内 allowlist を分けられる。
+ * - "portal"        ＝案件ポータル `/portal`（env `PORTAL_ALLOWED_EMAILS`）
+ * - "report-direct" ＝Slack 📋報告書ボタンの直リンク `/report/photo?caseId=`（env `REPORT_DIRECT_ALLOWED_EMAILS`）
+ */
+export type CaseSurface = "portal" | "report-direct";
+
+/**
+ * サーフェス別の試験運用 allowlist（**スペース/カンマ区切り**メール。gcloud の `--update-env-vars` は
+ * カンマを区切りに使うため、Cloud Run へはスペース区切りで入れる）。
+ * Slack の URL ボタンは GAS 側ではクリックを止められない（開いた後に ACK が飛ぶだけ）ため、
  * 「誰が開けるか」はこの門で絞る。**未設定なら従来どおり IAP のみが門**（＝@seibu-s.co.jp 全員）。
  */
-function portalAllowedEmails(): string[] {
-  return (process.env.PORTAL_ALLOWED_EMAILS ?? "")
+function surfaceAllowedEmails(surface: CaseSurface): string[] {
+  const raw =
+    surface === "report-direct"
+      ? process.env.REPORT_DIRECT_ALLOWED_EMAILS
+      : process.env.PORTAL_ALLOWED_EMAILS;
+  return (raw ?? "")
     .split(/[,\s]+/)
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
@@ -44,20 +56,28 @@ export type CaseAccess =
 /**
  * このセッションが当該案件を見てよいか、見てよいなら範囲は何かを決める。
  * 現状は裏（staff/IAP）のみ配線済み。表（capability/customer）は継ぎ目だけ用意し未配線。
+ * `surface` は試験運用の利用者限定にだけ効く（省略時＝ポータル）。
  */
-export function resolveCaseAccess(session: CaseSession, caseId: string): CaseAccess {
+export function resolveCaseAccess(
+  session: CaseSession,
+  caseId: string,
+  surface: CaseSurface = "portal"
+): CaseAccess {
   if (!caseId) return { allowed: false, reason: "案件IDが空です。" };
 
   switch (session.kind) {
     case "staff": {
       // 裏＝IAP が門。ここに来られている時点で @seibu-s.co.jp 認証済み。caseId はセレクタ。
       // （ローカル開発は IAP ヘッダ無し＝email:null でも社内扱い。本番は IAP 手前で弾かれる。）
-      // 試験運用中は PORTAL_ALLOWED_EMAILS で利用者をさらに絞る（設定がある間だけ効く狭い門）。
-      const allow = portalAllowedEmails();
+      // 試験運用中はサーフェス別 allowlist で利用者をさらに絞る（設定がある間だけ効く狭い門）。
+      const allow = surfaceAllowedEmails(surface);
       if (allow.length > 0 && (!session.email || !allow.includes(session.email.toLowerCase()))) {
         return {
           allowed: false,
-          reason: "案件ポータルは試験運用中のため、利用できるメンバーを限定しています。"
+          reason:
+            surface === "report-direct"
+              ? "報告書の直リンクは試験運用中のため、利用できるメンバーを限定しています。"
+              : "案件ポータルは試験運用中のため、利用できるメンバーを限定しています。"
         };
       }
       return { allowed: true, scope: "all" };

@@ -61,6 +61,18 @@ function toPortalReport(
 }
 
 /**
+ * 案件の**最新**の写真報告書への deep-link（token 採番済み）。無ければ null。
+ * Slack 📋報告書ボタンの直リンク（`/report/photo?caseId=` 入口）用：報告書は日付フォルダ単位の
+ * 管理のため「その案件の報告書」は一意でない → **caseId はセレクタ、最新 1 件への解決をアプリが担う**。
+ */
+export async function latestPhotoReportHref(caseId: string): Promise<string | null> {
+  if (!supabaseConfigured()) return null;
+  const rows = await loadReportRows("photo_reports", caseId);
+  if (rows.length === 0) return null;
+  return toPortalReport("photo", caseId, rows[0], "/report/photo").href;
+}
+
+/**
  * 案件ポータルの表示データを組む。
  * - scope="all"（裏・社内）＝現在版の編集面 + 確定索引を全部見せる。
  * - scope="customer-visible"（表・顧客）＝確定・顧客可視の成果物のみ（編集面は出さない）。
